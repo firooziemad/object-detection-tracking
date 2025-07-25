@@ -34,14 +34,33 @@ class CustomTracker:
         self.tracks = []
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         self.prev_gray = gray.copy()
+        
         x, y, w, h = bbox
+        regions = [
+            (x + w//4, y + h//4, w//2, h//2),
+            (x + w//8, y + h//8, 3*w//4, 3*h//4),
+            (x, y, w, h)
+        ]
+        
+        total_features = 0
+        for region in regions:
+            rx, ry, rw, rh = region
+            mask = np.zeros_like(gray)
+            mask[ry:ry+rh, rx:rx+rw] = 255
+            
+            region_params = self.feature_params.copy()
+            region_params['maxCorners'] = 30
+            
+            corners = cv2.goodFeaturesToTrack(gray, mask=mask, **region_params)
+            
+            if corners is not None:
+                for corner in corners:
+                    self.tracks.append([corner])
+                total_features += len(corners)
+
         self.kalman.statePost = np.array([x, y, w, h, 0, 0, 0, 0], dtype=np.float32)
-        mask = np.zeros_like(gray)
-        mask[y:y+h, x:x+w] = 255
-        corners = cv2.goodFeaturesToTrack(gray, mask=mask, **self.feature_params)
-        if corners is not None:
-            for corner in corners: self.tracks.append([corner])
-        return len(self.tracks) > 0
+        print(f"Initialized with {total_features} feature points.")
+        return total_features > 0
     
     def set_tracking_mode(self, mode):
         if mode in self.mode_configs:
