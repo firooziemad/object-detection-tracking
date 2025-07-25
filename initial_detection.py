@@ -4,7 +4,7 @@ import numpy as np
 
 # --- 1. CONFIGURATION ---
 # The path to your video file.
-VIDEO_PATH = "person1.mp4" 
+VIDEO_PATH = "person4.mp4" 
 # The name of the object you want to detect (e.g., "person", "car", "cat").
 # Make sure this class is in the COCO dataset, which YOLO was trained on.
 TARGET_CLASS_NAME = "person" 

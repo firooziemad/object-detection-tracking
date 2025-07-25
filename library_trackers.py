@@ -7,7 +7,7 @@ ENABLE_HYBRID_MODE = True
 # --- NEW: Set to False to disable specific object identification ---
 ENABLE_RE_IDENTIFICATION = True
 
-VIDEO_PATH = "person1.mp4"
+VIDEO_PATH = "person4.mp4"
 TARGET_CLASS_NAME = "person"
 MODEL_NAME = "yolov8n.pt"
 TRACKER_TYPE = "MOSSE"
