@@ -18,6 +18,23 @@ def parse_arguments():
     parser.add_argument('--ad', action='store_true', help='Enable auto re-detection mode')
     return parser.parse_args()
 
+def get_bbox_center(bbox):
+    x, y, w, h = bbox
+    return (x + w/2, y + h/2)
+
+def get_bbox_distance(bbox1, bbox2):
+    center1 = get_bbox_center(bbox1)
+    center2 = get_bbox_center(bbox2)
+    return np.sqrt((center1[0] - center2[0])**2 + (center1[1] - center2[1])**2)
+
+def get_bbox_size_similarity(bbox1, bbox2):
+    _, _, w1, h1 = bbox1
+    _, _, w2, h2 = bbox2
+    area1 = w1 * h1
+    area2 = w2 * h2
+    if area1 == 0 or area2 == 0: return 0
+    return min(area1, area2) / max(area1, area2)
+
 def get_best_detection(boxes, min_area, target_class_id):
     best_box, best_score, best_class_id = None, 0, None
     for box in boxes:
@@ -87,10 +104,8 @@ def main():
 
         info_y = 30
         cv2.putText(display_frame, f"Target: {target_class_name}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        info_y += 25
-        cv2.putText(display_frame, f"Mode: {tracker.tracking_mode.upper()}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+        info_y += 20
         if auto_redetect:
-            info_y += 20
             cv2.putText(display_frame, "Auto-redetect: ON", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
 
         cv2.imshow(f"Tracking - {target_class_name}", display_frame)
