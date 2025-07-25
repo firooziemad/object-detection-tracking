@@ -8,9 +8,6 @@ class CustomTracker:
         self.bbox = None
         self.prev_gray = None
         self.tracks = []
-        self.track_len = 10
-        self.detect_interval = 5
-        self.frame_idx = 0
         self.lost_count = 0
         self.max_lost_frames = 15
         
@@ -20,18 +17,20 @@ class CustomTracker:
         self.kalman.processNoiseCov = np.eye(8, dtype=np.float32) * 0.01
         self.kalman.measurementNoiseCov = np.eye(4, dtype=np.float32) * 0.1
         
+        self.size_smoothing_factor = 0.25
+        self.prev_bbox_size = None
         self.tracking_mode = "normal"
         self.mode_configs = {
             "smooth": {"detect_interval": 8, "max_corners": 50, "quality_level": 0.03, "min_distance": 12, "win_size": (19, 19), "max_level": 2, "max_lost_frames": 20},
-            "normal": {"detect_interval": 5, "max_corners": 80, "quality_level": 0.02, "min_distance": 10, "win_size": (15, 15), "max_level": 2, "max_lost_frames": 15},
+            "normal": {"detect_interval": 5, "max_corners": 80, "quality_level": 0.02, "min_distance": 10, "win_size": (15, 15), "max_level": 2, "max_lost_frames": 15, "size_smoothing": 0.08},
             "high_motion": {"detect_interval": 3, "max_corners": 120, "quality_level": 0.015, "min_distance": 8, "win_size": (13, 13), "max_level": 3, "max_lost_frames": 10}
         }
 
     def init(self, frame, bbox):
         self.bbox = bbox
         self.lost_count = 0
-        self.frame_idx = 0
         self.tracks = []
+        self.prev_bbox_size = (bbox[2], bbox[3])
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         self.prev_gray = gray.copy()
         
@@ -56,7 +55,7 @@ class CustomTracker:
         if mode in self.mode_configs:
             self.tracking_mode = mode
             config = self.mode_configs[mode]
-            self.detect_interval = config["detect_interval"]
+            if "size_smoothing" in config: self.size_smoothing_factor = config["size_smoothing"]
             self.max_lost_frames = config["max_lost_frames"]
             self.feature_params.update({'maxCorners': config["max_corners"], 'qualityLevel': config["quality_level"], 'minDistance': config["min_distance"]})
             self.lk_params.update({'winSize': config["win_size"], 'maxLevel': config["max_level"]})
@@ -67,41 +66,30 @@ class CustomTracker:
     def update(self, frame):
         if self.prev_gray is None: return False, None
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        self.frame_idx += 1
         
         if len(self.tracks) > 0:
             p0 = np.float32([tr[-1] for tr in self.tracks]).reshape(-1, 1, 2)
             p1, st, err = cv2.calcOpticalFlowPyrLK(self.prev_gray, gray, p0, None, **self.lk_params)
             
             good_new = p1[st == 1]
-            new_tracks = []
-            for i, tr in enumerate(self.tracks):
-                if st[i] == 1:
-                    tr.append(p1[i])
-                    if len(tr) > self.track_len: del tr[0]
-                    new_tracks.append(tr)
-            self.tracks = new_tracks
+            self.tracks = [tr for i, tr in enumerate(self.tracks) if st[i] == 1]
             
             if len(good_new) >= 8:
-                current_points = good_new.reshape(-1, 2)
-                x_coords = current_points[:, 0]
-                y_coords = current_points[:, 1]
+                x_coords = good_new[:, 0, 0]
+                y_coords = good_new[:, 0, 1]
                 
-                x_min = np.percentile(x_coords, 5)
-                x_max = np.percentile(x_coords, 95)
-                y_min = np.percentile(y_coords, 5)
-                y_max = np.percentile(y_coords, 95)
-
-                padding_w = max(10, (x_max - x_min) * 0.15)
-                padding_h = max(10, (y_max - y_min) * 0.15)
-
-                x_min = max(0, x_min - padding_w)
-                y_min = max(0, y_min - padding_h)
-                x_max = min(gray.shape[1], x_max + padding_w)
-                y_max = min(gray.shape[0], y_max + padding_h)
-
-                new_w = x_max - x_min
-                new_h = y_max - y_min
+                x_min, x_max = np.percentile(x_coords, 5), np.percentile(x_coords, 95)
+                y_min, y_max = np.percentile(y_coords, 5), np.percentile(y_coords, 95)
+                
+                detected_w, detected_h = x_max - x_min, y_max - y_min
+                new_w, new_h = detected_w, detected_h
+                
+                if self.prev_bbox_size is not None:
+                    prev_w, prev_h = self.prev_bbox_size
+                    new_w = prev_w * (1 - self.size_smoothing_factor) + detected_w * self.size_smoothing_factor
+                    new_h = prev_h * (1 - self.size_smoothing_factor) + detected_h * self.size_smoothing_factor
+                
+                self.prev_bbox_size = (new_w, new_h)
 
                 self.lost_count = 0
                 self.kalman.predict()
