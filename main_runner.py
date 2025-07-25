@@ -15,6 +15,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Object Tracking System')
     parser.add_argument('--object', '-o', type=str, help='Object to track')
     parser.add_argument('--video', '-v', type=str, help='Video path')
+    parser.add_argument('--ad', action='store_true', help='Enable auto re-detection mode')
     return parser.parse_args()
 
 def get_best_detection(boxes, min_area, target_class_id):
@@ -38,12 +39,13 @@ def main():
     model = YOLO(MODEL_NAME)
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0: fps = 30
     
     success, frame = cap.read()
     results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD)
     best_box, _, _ = get_best_detection(results[0].boxes, 5000, target_class_id)
-    if best_box is None:
-        print("Detection failed."); return
+    if best_box is None: print("Detection failed."); return
         
     xyxy = best_box.xyxy[0].cpu().numpy()
     initial_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
@@ -53,6 +55,8 @@ def main():
     
     frame_count = 0
     paused = False
+    auto_redetect = args.ad
+    redetect_counter = 0
 
     while True:
         if not paused:
@@ -60,46 +64,51 @@ def main():
             if not success: break
             frame_count += 1
             tracking_success, box = tracker.update(frame)
-        
+            
+            if auto_redetect and not tracking_success:
+                redetect_counter += 1
+                if redetect_counter >= int(fps / 2):
+                    redetect_counter = 0
+                    print("Auto re-detection...")
+                    results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD * 0.8)
+                    best_box, conf, _ = get_best_detection(results[0].boxes, 2000, target_class_id)
+                    if best_box is not None:
+                        xyxy = best_box.xyxy[0].cpu().numpy()
+                        new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                        if tracker.init(frame, new_bbox):
+                            tracking_success, box = True, new_bbox
+
         display_frame = frame.copy()
         if tracking_success and box is not None:
             x, y, w, h = box
             cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
-            cv2.putText(display_frame, f"Tracking: {len(tracker.tracks)} features", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         else:
             cv2.putText(display_frame, "TRACKING LOST", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
         info_y = 30
         cv2.putText(display_frame, f"Target: {target_class_name}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         info_y += 25
-        cv2.putText(display_frame, f"Frame: {frame_count}/{total_frames}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        info_y += 20
         cv2.putText(display_frame, f"Mode: {tracker.tracking_mode.upper()}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
-
-        if paused:
-            cv2.putText(display_frame, "PAUSED", (10, display_frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        if auto_redetect:
+            info_y += 20
+            cv2.putText(display_frame, "Auto-redetect: ON", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
 
         cv2.imshow(f"Tracking - {target_class_name}", display_frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'): break
         elif key == ord('p'): paused = not paused
+        elif key == ord('f'): auto_redetect = not auto_redetect
         elif key == ord('s'): tracker.set_tracking_mode("smooth")
         elif key == ord('h'): tracker.set_tracking_mode("high_motion")
         elif key == ord('n'): tracker.set_tracking_mode("normal")
         elif key == ord('r'):
-            print("Manual re-detection...")
             results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD * 0.8)
             best_box, conf, _ = get_best_detection(results[0].boxes, 3000, target_class_id)
             if best_box is not None:
                 xyxy = best_box.xyxy[0].cpu().numpy()
                 new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
-                if tracker.init(frame, new_bbox):
-                    print(f"Manual re-detection successful: {new_bbox} (conf: {conf:.3f})")
-                else:
-                    print("Failed to re-initialize tracker")
-            else:
-                print("No suitable object found for re-detection")
+                tracker.init(frame, new_bbox)
         
     cap.release()
     cv2.destroyAllWindows()
