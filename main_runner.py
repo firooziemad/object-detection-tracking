@@ -24,6 +24,7 @@ def parse_arguments():
     parser.add_argument('--object', '-o', type=str, help='Object to track')
     parser.add_argument('--video', '-v', type=str, help='Video path')
     parser.add_argument('--ad', action='store_true', help='Enable auto re-detection mode')
+    parser.add_argument('--hd', action='store_true', help='Enable history-based re-detection')
     return parser.parse_args()
 
 def get_bbox_center(bbox):
@@ -41,7 +42,7 @@ def get_bbox_size_similarity(bbox1, bbox2):
     area1 = w1 * h1
     area2 = w2 * h2
     if area1 == 0 or area2 == 0: return 0
-    return min(area1, a2) / max(area1, area2)
+    return min(area1, area2) / max(area1, area2)
 
 def get_best_detection(boxes, min_area, target_class_id):
     best_box, best_score, best_class_id = None, 0, None
@@ -55,12 +56,43 @@ def get_best_detection(boxes, min_area, target_class_id):
             best_score, best_box, best_class_id = confidence, box, class_id
     return best_box, best_score, best_class_id
 
+def get_best_match(current_bbox, detections, history_bboxes):
+    if not detections:
+        return None
+
+    best_match_box = None
+    highest_score = -1
+
+    for det in detections:
+        xyxy = det.xyxy[0].cpu().numpy()
+        conf = det.conf[0].cpu().numpy()
+        det_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+
+        # Score based on distance, size similarity, history, and confidence
+        dist_score = max(0, 1 - (get_bbox_distance(current_bbox, det_bbox) / 250)) # Normalize distance score
+        size_score = get_bbox_size_similarity(current_bbox, det_bbox)
+
+        hist_score = 0
+        if history_bboxes:
+            hist_dists = [get_bbox_distance(hist_bbox, det_bbox) for hist_bbox in history_bboxes[-5:]]
+            hist_score = max(0, 1 - (np.mean(hist_dists) / 250))
+
+        # Weighted average of scores
+        total_score = (dist_score * 0.4 + size_score * 0.3 + hist_score * 0.2 + conf * 0.1)
+
+        if total_score > highest_score:
+            highest_score = total_score
+            best_match_box = det
+
+    return best_match_box
+
 def main():
     args = parse_arguments()
     target_class_name = args.object if args.object else TARGET_CLASS_NAME
     video_path = args.video if args.video else VIDEO_PATH
     target_class_id = YOLO_CLASSES.get(target_class_name.lower())
     auto_redetect = args.ad
+    history_redetect = args.hd
 
     if target_class_id is None:
         print(f"Error: Object '{target_class_name}' not in YOLO_CLASSES list.")
@@ -90,6 +122,7 @@ def main():
     tracker.set_tracking_mode(config['mode'])
     tracker.init(frame, initial_bbox)
 
+    bbox_history = [initial_bbox]
     paused = False
     redetect_counter = 0
     while True:
@@ -98,6 +131,10 @@ def main():
             if not success: break
 
             tracking_success, box = tracker.update(frame)
+            if tracking_success and box:
+                bbox_history.append(box)
+                if len(bbox_history) > 20:
+                    bbox_history.pop(0)
 
             if auto_redetect and not tracking_success:
                 redetect_counter += 1
@@ -111,6 +148,7 @@ def main():
                         new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
                         if tracker.init(frame, new_bbox):
                             tracking_success, box = True, new_bbox
+                            bbox_history.append(new_bbox)
 
         display_frame = frame.copy()
         if tracking_success and box is not None:
@@ -126,13 +164,17 @@ def main():
         info_y += 20
         if auto_redetect:
             cv2.putText(display_frame, "Auto-redetect: ON", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+            info_y += 20
+        if history_redetect:
+            cv2.putText(display_frame, "History-redetect: ON", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 1)
 
         cv2.imshow(f"Tracking - {target_class_name}", display_frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'): break
         elif key == ord('p'): paused = not paused
-        elif key == ord('f'): auto_redetect = not auto_redetect; print(f"Auto re-detect: {'ON' if auto_redetect else 'OFF'}")
+        elif key == ord('f'): auto_redetect = not auto_redetect
+        elif key == ord('e'): history_redetect = not history_redetect
         elif key == ord('s'): tracker.set_tracking_mode("smooth")
         elif key == ord('h'): tracker.set_tracking_mode("high_motion")
         elif key == ord('n'): tracker.set_tracking_mode("normal")
@@ -143,6 +185,7 @@ def main():
                 xyxy = best_box.xyxy[0].cpu().numpy()
                 new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
                 tracker.init(frame, new_bbox)
+                bbox_history.append(new_bbox)
 
     cap.release()
     cv2.destroyAllWindows()
