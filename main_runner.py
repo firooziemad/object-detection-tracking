@@ -9,7 +9,15 @@ VIDEO_PATH = "person4.mp4"
 TARGET_CLASS_NAME = "person"
 MODEL_NAME = "yolov8n.pt"
 YOLO_CONFIDENCE_THRESHOLD = 0.6
-YOLO_CLASSES = { "person": 0, "car": 2, "dog": 16, "cat": 15 }
+YOLO_CLASSES = { "person": 0, "car": 2, "dog": 16, "cat": 15, "bicycle": 1, "motorcycle": 3, "bottle": 39 }
+
+PRESETS = {
+    "person": {"min": 5000, "rmin": 2000, "mode": "normal"},
+    "car": {"min": 8000, "rmin": 3000, "mode": "high_motion"},
+    "dog": {"min": 3000, "rmin": 1500, "mode": "high_motion"},
+    "cat": {"min": 2000, "rmin": 1000, "mode": "smooth"},
+    "bicycle": {"min": 6000, "rmin": 2500, "mode": "normal"},
+}
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Object Tracking System')
@@ -49,6 +57,7 @@ def main():
     success, frame = cap.read()
     if not success: return
 
+    # This part will be updated to use the presets
     results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD)
     best_box, _, _ = get_best_detection(results[0].boxes, 5000, target_class_id)
     if best_box is None: 
@@ -72,7 +81,7 @@ def main():
 
             if auto_redetect and not tracking_success:
                 redetect_counter += 1
-                if redetect_counter >= int(fps / 2): # Try to re-detect every half second
+                if redetect_counter >= int(fps / 2):
                     redetect_counter = 0
                     print("Auto re-detection...")
                     results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD * 0.8)
@@ -90,7 +99,6 @@ def main():
         else:
             cv2.putText(display_frame, "TRACKING LOST", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
-        # --- UI Text ---
         info_y = 30
         cv2.putText(display_frame, f"Target: {target_class_name}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         info_y += 25
@@ -98,7 +106,6 @@ def main():
         info_y += 20
         if auto_redetect:
             cv2.putText(display_frame, "Auto-redetect: ON", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
-        # --- End UI Text ---
 
         cv2.imshow(f"Tracking - {target_class_name}", display_frame)
 
