@@ -18,7 +18,7 @@ def parse_arguments():
     return parser.parse_args()
 
 def get_best_detection(boxes, min_area, target_class_id):
-    best_box, best_score = None, 0
+    best_box, best_score, best_class_id = None, 0, None
     for box in boxes:
         xyxy = box.xyxy[0].cpu().numpy()
         confidence = box.conf[0].cpu().numpy()
@@ -26,8 +26,8 @@ def get_best_detection(boxes, min_area, target_class_id):
         if class_id != target_class_id: continue
         area = (xyxy[2] - xyxy[0]) * (xyxy[3] - xyxy[1])
         if area > min_area and confidence > best_score:
-            best_score, best_box = confidence, box
-    return best_box, best_score
+            best_score, best_box, best_class_id = confidence, box, class_id
+    return best_box, best_score, best_class_id
 
 def main():
     args = parse_arguments()
@@ -41,7 +41,7 @@ def main():
     
     success, frame = cap.read()
     results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD)
-    best_box, _ = get_best_detection(results[0].boxes, 5000, target_class_id)
+    best_box, _, _ = get_best_detection(results[0].boxes, 5000, target_class_id)
     if best_box is None:
         print("Detection failed."); return
         
@@ -84,15 +84,22 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'): break
         elif key == ord('p'): paused = not paused
-        elif key == ord('s'):
-            tracker.set_tracking_mode("smooth")
-            print("Switched to SMOOTH mode")
-        elif key == ord('h'):
-            tracker.set_tracking_mode("high_motion")
-            print("Switched to HIGH MOTION mode")
-        elif key == ord('n'):
-            tracker.set_tracking_mode("normal")
-            print("Switched to NORMAL mode")
+        elif key == ord('s'): tracker.set_tracking_mode("smooth")
+        elif key == ord('h'): tracker.set_tracking_mode("high_motion")
+        elif key == ord('n'): tracker.set_tracking_mode("normal")
+        elif key == ord('r'):
+            print("Manual re-detection...")
+            results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD * 0.8)
+            best_box, conf, _ = get_best_detection(results[0].boxes, 3000, target_class_id)
+            if best_box is not None:
+                xyxy = best_box.xyxy[0].cpu().numpy()
+                new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                if tracker.init(frame, new_bbox):
+                    print(f"Manual re-detection successful: {new_bbox} (conf: {conf:.3f})")
+                else:
+                    print("Failed to re-initialize tracker")
+            else:
+                print("No suitable object found for re-detection")
         
     cap.release()
     cv2.destroyAllWindows()
