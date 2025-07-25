@@ -26,6 +26,23 @@ def parse_arguments():
     parser.add_argument('--ad', action='store_true', help='Enable auto re-detection mode')
     return parser.parse_args()
 
+def get_bbox_center(bbox):
+    x, y, w, h = bbox
+    return (x + w/2, y + h/2)
+
+def get_bbox_distance(bbox1, bbox2):
+    center1 = get_bbox_center(bbox1)
+    center2 = get_bbox_center(bbox2)
+    return np.sqrt((center1[0] - center2[0])**2 + (center1[1] - center2[1])**2)
+
+def get_bbox_size_similarity(bbox1, bbox2):
+    _, _, w1, h1 = bbox1
+    _, _, w2, h2 = bbox2
+    area1 = w1 * h1
+    area2 = w2 * h2
+    if area1 == 0 or area2 == 0: return 0
+    return min(area1, a2) / max(area1, area2)
+
 def get_best_detection(boxes, min_area, target_class_id):
     best_box, best_score, best_class_id = None, 0, None
     for box in boxes:
@@ -49,6 +66,9 @@ def main():
         print(f"Error: Object '{target_class_name}' not in YOLO_CLASSES list.")
         return
 
+    config = PRESETS.get(target_class_name.lower(), {"min": 3000, "rmin": 1500, "mode": "normal"})
+    print(f"Loaded config for '{target_class_name}': {config}")
+
     model = YOLO(MODEL_NAME)
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -57,17 +77,17 @@ def main():
     success, frame = cap.read()
     if not success: return
 
-    # This part will be updated to use the presets
     results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD)
-    best_box, _, _ = get_best_detection(results[0].boxes, 5000, target_class_id)
+    best_box, _, _ = get_best_detection(results[0].boxes, config['min'], target_class_id)
     if best_box is None: 
-        print("Initial detection failed.")
+        print(f"Initial detection failed. No object found with minimum area {config['min']}.")
         return
 
     xyxy = best_box.xyxy[0].cpu().numpy()
     initial_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
 
     tracker = CustomTracker()
+    tracker.set_tracking_mode(config['mode'])
     tracker.init(frame, initial_bbox)
 
     paused = False
@@ -85,7 +105,7 @@ def main():
                     redetect_counter = 0
                     print("Auto re-detection...")
                     results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD * 0.8)
-                    best_box, conf, _ = get_best_detection(results[0].boxes, 2000, target_class_id)
+                    best_box, conf, _ = get_best_detection(results[0].boxes, config['rmin'], target_class_id)
                     if best_box is not None:
                         xyxy = best_box.xyxy[0].cpu().numpy()
                         new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
@@ -118,7 +138,7 @@ def main():
         elif key == ord('n'): tracker.set_tracking_mode("normal")
         elif key == ord('r'):
             results = model(frame, verbose=False, classes=[target_class_id], conf=YOLO_CONFIDENCE_THRESHOLD * 0.8)
-            best_box, conf, _ = get_best_detection(results[0].boxes, 3000, target_class_id)
+            best_box, conf, _ = get_best_detection(results[0].boxes, config['rmin'], target_class_id)
             if best_box is not None:
                 xyxy = best_box.xyxy[0].cpu().numpy()
                 new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
