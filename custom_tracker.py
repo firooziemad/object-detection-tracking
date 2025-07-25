@@ -36,30 +36,20 @@ class CustomTracker:
         self.prev_gray = gray.copy()
         
         x, y, w, h = bbox
-        regions = [
-            (x + w//4, y + h//4, w//2, h//2),
-            (x + w//8, y + h//8, 3*w//4, 3*h//4),
-            (x, y, w, h)
-        ]
-        
+        regions = [(x + w//4, y + h//4, w//2, h//2), (x, y, w, h)]
         total_features = 0
         for region in regions:
             rx, ry, rw, rh = region
             mask = np.zeros_like(gray)
             mask[ry:ry+rh, rx:rx+rw] = 255
-            
             region_params = self.feature_params.copy()
-            region_params['maxCorners'] = 30
-            
+            region_params['maxCorners'] = 50
             corners = cv2.goodFeaturesToTrack(gray, mask=mask, **region_params)
-            
             if corners is not None:
-                for corner in corners:
-                    self.tracks.append([corner])
+                for corner in corners: self.tracks.append([corner])
                 total_features += len(corners)
 
         self.kalman.statePost = np.array([x, y, w, h, 0, 0, 0, 0], dtype=np.float32)
-        print(f"Initialized with {total_features} feature points.")
         return total_features > 0
     
     def set_tracking_mode(self, mode):
@@ -93,8 +83,27 @@ class CustomTracker:
             self.tracks = new_tracks
             
             if len(good_new) >= 8:
+                current_points = good_new.reshape(-1, 2)
+                x_coords = current_points[:, 0]
+                y_coords = current_points[:, 1]
+                
+                x_min = np.percentile(x_coords, 5)
+                x_max = np.percentile(x_coords, 95)
+                y_min = np.percentile(y_coords, 5)
+                y_max = np.percentile(y_coords, 95)
+
+                padding_w = max(10, (x_max - x_min) * 0.15)
+                padding_h = max(10, (y_max - y_min) * 0.15)
+
+                x_min = max(0, x_min - padding_w)
+                y_min = max(0, y_min - padding_h)
+                x_max = min(gray.shape[1], x_max + padding_w)
+                y_max = min(gray.shape[0], y_max + padding_h)
+
+                new_w = x_max - x_min
+                new_h = y_max - y_min
+
                 self.lost_count = 0
-                x_min, y_min, new_w, new_h = cv2.boundingRect(good_new)
                 self.kalman.predict()
                 measurement = np.array([x_min, y_min, new_w, new_h], dtype=np.float32)
                 self.kalman.correct(measurement)
