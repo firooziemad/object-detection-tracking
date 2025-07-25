@@ -73,6 +73,8 @@ def main():
         cv2.putText(display_frame, f"Target: {target_class_name}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         info_y += 25
         cv2.putText(display_frame, f"Frame: {frame_count}/{total_frames}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        info_y += 20
+        cv2.putText(display_frame, f"Mode: {tracker.tracking_mode.upper()}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
 
         if paused:
             cv2.putText(display_frame, "PAUSED", (10, display_frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
@@ -82,6 +84,15 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'): break
         elif key == ord('p'): paused = not paused
+        elif key == ord('s'):
+            tracker.set_tracking_mode("smooth")
+            print("Switched to SMOOTH mode")
+        elif key == ord('h'):
+            tracker.set_tracking_mode("high_motion")
+            print("Switched to HIGH MOTION mode")
+        elif key == ord('n'):
+            tracker.set_tracking_mode("normal")
+            print("Switched to NORMAL mode")
         
     cap.release()
     cv2.destroyAllWindows()
