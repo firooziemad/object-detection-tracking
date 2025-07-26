@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 
-class CustomTracker:
+class CT: # Renamed
     def __init__(self):
-        self.feature_params = dict(maxCorners=100, qualityLevel=0.01, minDistance=8, blockSize=7)
-        self.lk_params = dict(winSize=(21, 21), maxLevel=3, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
+        # Renamed variables
+        self.fp = dict(maxCorners=100, qualityLevel=0.01, minDistance=8, blockSize=7)
+        self.lk = dict(winSize=(21, 21), maxLevel=3, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
         self.bbox = None
         self.prev_gray = None
         self.tracks = []
@@ -43,7 +44,7 @@ class CustomTracker:
             rx, ry, rw, rh = region
             mask = np.zeros_like(gray)
             mask[ry:ry+rh, rx:rx+rw] = 255
-            region_params = self.feature_params.copy()
+            region_params = self.fp.copy()
             region_params['maxCorners'] = 50
             corners = cv2.goodFeaturesToTrack(gray, mask=mask, **region_params)
             if corners is not None:
@@ -60,8 +61,8 @@ class CustomTracker:
             if "size_smoothing" in config: self.size_smoothing_factor = config["size_smoothing"]
             self.max_lost_frames = config["max_lost_frames"]
             self.detect_interval = config["detect_interval"]
-            self.feature_params.update({'maxCorners': config["max_corners"], 'qualityLevel': config["quality_level"], 'minDistance': config["min_distance"]})
-            self.lk_params.update({'winSize': config["win_size"], 'maxLevel': config["max_level"]})
+            self.fp.update({'maxCorners': config["max_corners"], 'qualityLevel': config["quality_level"], 'minDistance': config["min_distance"]})
+            self.lk.update({'winSize': config["win_size"], 'maxLevel': config["max_level"]})
             print(f"Tracking mode set to: {mode}")
             return True
         return False
@@ -74,19 +75,15 @@ class CustomTracker:
         x_coords = tracked_points[:, 0, 0]
         y_coords = tracked_points[:, 0, 1]
 
-        # Check if points are clustered at the edges
         edge_threshold = 20
         at_edge = np.sum((x_coords < edge_threshold) | (x_coords > w - edge_threshold) | \
                          (y_coords < edge_threshold) | (y_coords > h - edge_threshold))
         if at_edge / len(tracked_points) > 0.7:
-            print("Track lost: features are clustered at frame edge.")
             return True
 
-        # Check if the spread of points is too small
         spread_x = np.max(x_coords) - np.min(x_coords)
         spread_y = np.max(y_coords) - np.min(y_coords)
         if spread_x < 30 or spread_y < 40:
-            print("Track lost: feature spread is too small.")
             return True
 
         return False
@@ -98,7 +95,7 @@ class CustomTracker:
 
         if len(self.tracks) > 0:
             p0 = np.float32([tr[-1] for tr in self.tracks]).reshape(-1, 1, 2)
-            p1, st, err = cv2.calcOpticalFlowPyrLK(self.prev_gray, gray, p0, None, **self.lk_params)
+            p1, st, err = cv2.calcOpticalFlowPyrLK(self.prev_gray, gray, p0, None, **self.lk)
 
             good_new = p1[st == 1]
             self.tracks = [tr for i, tr in enumerate(self.tracks) if st[i] == 1]
@@ -121,7 +118,7 @@ class CustomTracker:
                 self.kalman.correct(measurement)
                 self.bbox = tuple(map(int, self.kalman.statePost.flatten()[:4]))
             else:
-                self.lost_count += 3 # Penalize more heavily if heuristic fails
+                self.lost_count += 3
         else:
             self.lost_count += 1
 
@@ -132,7 +129,7 @@ class CustomTracker:
             for tr in self.tracks:
                 cv2.circle(mask, tuple(map(int, tr[-1][0])), 5, 0, -1)
 
-            new_corners = cv2.goodFeaturesToTrack(gray, mask=mask, **self.feature_params)
+            new_corners = cv2.goodFeaturesToTrack(gray, mask=mask, **self.fp)
             if new_corners is not None:
                 for corner in new_corners:
                     self.tracks.append([corner])
@@ -140,3 +137,6 @@ class CustomTracker:
         self.prev_gray = gray.copy()
         success = self.lost_count <= self.max_lost_frames
         return success, self.bbox
+		
+		git add custom_tracker.py
+git commit -m "refactor(tracker): Rename class to CT and core parameter variables"
