@@ -2,173 +2,184 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-# --- 1. MASTER CONFIGURATION ---
-ENABLE_HYBRID_MODE = True
-# --- NEW: Set to False to disable specific object identification ---
-ENABLE_RE_IDENTIFICATION = True
+HYBRID = False
+REID = False
 
-VIDEO_PATH = "person1.mp4"
-TARGET_CLASS_NAME = "person"
-MODEL_NAME = "yolov8n.pt"
-TRACKER_TYPE = "MOSSE"
+VID = "carr3.mp4"
+CLS = "car"
+MODEL = "yolov8n.pt"
+TRK = "KCF"
 
-# --- 2. TUNING PARAMETERS (for Hybrid Mode) ---
-HEALTH_CHECK_INTERVAL = 45
-REDETECTION_INTERVAL = 15
-SCALE_SMOOTHING_FACTOR = 0.2
-YOLO_CONFIDENCE_THRESHOLD = 0.5
-IOU_THRESHOLD = 0.3
-# Set this to a lower value like 0.45 if Re-ID is too strict
-REID_SIMILARITY_THRESHOLD = 0.45 
-FEATURE_UPDATE_RATE = 0.05
+HEALTH_INT = 45
+REDET_INT = 15
+SCALE_SMOOTH = 0.2
+YOLO_CONF = 0.5
+IOU_TH = 0.3
+REID_TH = 0.45
+FEAT_RATE = 0.05
 
-def create_tracker(tracker_type):
-    if tracker_type == 'CSRT': tracker = cv2.TrackerCSRT_create()
-    elif tracker_type == 'KCF': tracker = cv2.TrackerKCF_create()
-    elif tracker_type == 'MOSSE': tracker = cv2.legacy.TrackerMOSSE_create()
+def make_trk(t):
+    if t == 'CSRT': trk = cv2.TrackerCSRT_create()
+    elif t == 'KCF': trk = cv2.TrackerKCF_create()
+    elif t == 'MOSSE': trk = cv2.legacy.TrackerMOSSE_create()
     else: raise ValueError("Invalid tracker type specified.")
-    return tracker
+    return trk
 
-def calculate_iou(boxA, boxB):
-    xA, yA = max(boxA[0], boxB[0]), max(boxA[1], boxB[1])
-    xB, yB = min(boxA[0] + boxA[2], boxB[0] + boxB[2]), min(boxA[1] + boxA[3], boxB[1] + boxB[3])
-    interArea = max(0, xB - xA) * max(0, yB - yA)
-    boxAArea, boxBArea = boxA[2] * boxA[3], boxB[2] * boxB[3]
-    unionArea = float(boxAArea + boxBArea - interArea)
-    iou = interArea / unionArea if unionArea > 0 else 0
-    return iou
+def iou(a, b):
+    xa, ya = max(a[0], b[0]), max(a[1], b[1])
+    xb, yb = min(a[0]+a[2], b[0]+b[2]), min(a[1]+a[3], b[1]+b[3])
+    inter = max(0, xb-xa) * max(0, yb-ya)
+    area_a, area_b = a[2]*a[3], b[2]*b[3]
+    union = float(area_a + area_b - inter)
+    return inter/union if union > 0 else 0
 
-def get_color_histogram(frame, bbox):
-    x, y, w, h = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+def get_hist(img, box):
+    x, y, w, h = int(box[0]), int(box[1]), int(box[2]), int(box[3])
     if w <= 0 or h <= 0: return None
-    roi = frame[y:y+h, x:x+w]
-    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    hist = cv2.calcHist([hsv_roi], [0, 1], None, [180, 256], [0, 180, 0, 256])
+    roi = img[y:y+h, x:x+w]
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], None, [180, 256], [0, 180, 0, 256])
     cv2.normalize(hist, hist, 0, 255, cv2.NORM_MINMAX)
     return hist
 
 def main():
-    model = YOLO(MODEL_NAME)
-    cap = cv2.VideoCapture(VIDEO_PATH)
-    if not cap.isOpened(): print(f"Error opening video {VIDEO_PATH}"); return
-    success, frame = cap.read()
-    if not success: print("Error reading first frame."); return
+    mdl = YOLO(MODEL)
+    cap = cv2.VideoCapture(VID)
+    if not cap.isOpened(): print(f"Error opening video {VID}"); return
+    ok, frm = cap.read()
+    if not ok: print("Error reading first frame."); return
 
-    target_class_id = list(model.names.keys())[list(model.names.values()).index(TARGET_CLASS_NAME.lower())]
-    results = model(frame, verbose=False, classes=[target_class_id])
-    
-    initial_bbox, tracked_features = None, None
-    if len(results[0].boxes) > 0:
-        xyxy = results[0].boxes[0].xyxy[0].cpu().numpy()
-        initial_bbox = tuple(map(int, [xyxy[0], xyxy[1], xyxy[2] - xyxy[0], xyxy[3] - xyxy[1]]))
-        if ENABLE_RE_IDENTIFICATION:
-            tracked_features = get_color_histogram(frame, initial_bbox)
-            if tracked_features is None: print("Initial object has invalid size."); return
-            print(f"Found '{TARGET_CLASS_NAME}' and extracted its feature signature.")
+    cls_id = list(mdl.names.keys())[list(mdl.names.values()).index(CLS.lower())]
+    res = mdl(frm, verbose=False, classes=[cls_id])
 
-    if not initial_bbox: print("Target not found in first frame."); return
+    box0, feat0 = None, None
+    if len(res[0].boxes) > 0:
+        xyxy = res[0].boxes[0].xyxy[0].cpu().numpy()
+        box0 = tuple(map(int, [xyxy[0], xyxy[1], xyxy[2]-xyxy[0], xyxy[3]-xyxy[1]]))
+        if REID:
+            feat0 = get_hist(frm, box0)
+            if feat0 is None: print("Initial object has invalid size."); return
+            print(f"Found '{CLS}' and extracted its feature signature.")
 
-    tracker = create_tracker(TRACKER_TYPE)
-    tracker.init(frame, initial_bbox)
+    if not box0: print("Target not found in first frame."); return
 
-    if ENABLE_HYBRID_MODE:
-        run_hybrid_mode(cap, tracker, model, initial_bbox, tracked_features)
+    trk = make_trk(TRK)
+    trk.init(frm, box0)
+
+    if HYBRID:
+        run_hybrid(cap, trk, mdl, box0, feat0)
     else:
-        run_pure_tracking_mode(cap, tracker)
+        run_track(cap, trk)
 
     cap.release()
     cv2.destroyAllWindows()
 
-def run_pure_tracking_mode(cap, tracker):
+def run_track(cap, trk):
+    fps_sum = 0
+    cnt = 0
+
     while True:
-        success, frame = cap.read()
-        if not success: break
-        timer = cv2.getTickCount()
-        tracking_success, box = tracker.update(frame)
-        if tracking_success:
-            p1, p2 = (int(box[0]), int(box[1])), (int(box[0] + box[2]), int(box[1] + box[3]))
-            cv2.rectangle(frame, p1, p2, (0, 255, 0), 2)
-        fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
-        cv2.putText(frame, f"FPS: {int(fps)} ({TRACKER_TYPE})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.imshow("Pure Tracking Mode", frame)
+        ok, frm = cap.read()
+        if not ok: break
+        t0 = cv2.getTickCount()
+        ok_trk, box = trk.update(frm)
+        if ok_trk:
+            p1, p2 = (int(box[0]), int(box[1])), (int(box[0]+box[2]), int(box[1]+box[3]))
+            cv2.rectangle(frm, p1, p2, (0,255,0), 2)
+
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - t0)
+        fps_sum += fps
+        cnt += 1
+
+        cv2.putText(frm, f"FPS: {int(fps)} ({TRK})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+        cv2.imshow("Pure Tracking Mode", frm)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
-def run_hybrid_mode(cap, tracker, model, initial_bbox, tracked_features):
-    tracking_active, frames_since_lost, frame_count = True, 0, 0
-    current_size, target_size = (initial_bbox[2], initial_bbox[3]), (initial_bbox[2], initial_bbox[3])
-    target_class_id = list(model.names.keys())[list(model.names.values()).index(TARGET_CLASS_NAME.lower())]
+    if cnt > 0:
+        avg_fps = fps_sum / cnt
+        print(f"\nPure Tracking Mode finished. Average FPS: {avg_fps:.2f}")
+
+def run_hybrid(cap, trk, mdl, box0, feat0):
+    active, lost, cnt, fps_sum = True, 0, 0, 0
+    sz, sz_tgt = (box0[2], box0[3]), (box0[2], box0[3])
+    cls_id = list(mdl.names.keys())[list(mdl.names.values()).index(CLS.lower())]
 
     while True:
-        success, frame = cap.read()
-        if not success: break
-        frame_count += 1
-        timer = cv2.getTickCount()
-        final_box_to_draw = None
+        ok, frm = cap.read()
+        if not ok: break
+        cnt += 1
+        t0 = cv2.getTickCount()
+        box_draw = None
 
-        if tracking_active:
-            tracking_success, box = tracker.update(frame)
-            is_healthy = True
-            if tracking_success and frame_count % HEALTH_CHECK_INTERVAL == 0:
-                det_results = model(frame, verbose=False, imgsz=320, conf=YOLO_CONFIDENCE_THRESHOLD, classes=[target_class_id])
-                if len(det_results[0].boxes) > 0:
-                    det_box = tuple(map(int, det_results[0].boxes[0].xyxy[0].cpu().numpy()))
-                    det_box = (det_box[0], det_box[1], det_box[2] - det_box[0], det_box[3] - det_box[1])
-                    if calculate_iou(box, det_box) < IOU_THRESHOLD: is_healthy = False
+        if active:
+            ok_trk, box = trk.update(frm)
+            healthy = True
+            if ok_trk and cnt % HEALTH_INT == 0:
+                det = mdl(frm, verbose=False, imgsz=320, conf=YOLO_CONF, classes=[cls_id])
+                if len(det[0].boxes) > 0:
+                    dbox = tuple(map(int, det[0].boxes[0].xyxy[0].cpu().numpy()))
+                    dbox = (dbox[0], dbox[1], dbox[2]-dbox[0], dbox[3]-dbox[1])
+                    if iou(box, dbox) < IOU_TH: healthy = False
                     else:
-                        target_size = (det_box[2], det_box[3])
-                        if ENABLE_RE_IDENTIFICATION:
-                            current_healthy_features = get_color_histogram(frame, det_box)
-                            if current_healthy_features is not None:
-                                cv2.addWeighted(current_healthy_features, FEATURE_UPDATE_RATE, tracked_features, 1 - FEATURE_UPDATE_RATE, 0, tracked_features)
-                else: is_healthy = False
-            if tracking_success and is_healthy:
-                w, h = int(current_size[0] * (1 - SCALE_SMOOTHING_FACTOR) + target_size[0] * SCALE_SMOOTHING_FACTOR), int(current_size[1] * (1 - SCALE_SMOOTHING_FACTOR) + target_size[1] * SCALE_SMOOTHING_FACTOR)
-                current_size = (w, h)
-                center_x, center_y = int(box[0] + box[2] / 2), int(box[1] + box[3] / 2)
-                final_box_to_draw = (center_x - w // 2, center_y - h // 2, w, h)
+                        sz_tgt = (dbox[2], dbox[3])
+                        if REID:
+                            feat_now = get_hist(frm, dbox)
+                            if feat_now is not None:
+                                cv2.addWeighted(feat_now, FEAT_RATE, feat0, 1-FEAT_RATE, 0, feat0)
+                else: healthy = False
+            if ok_trk and healthy:
+                w, h = int(sz[0]*(1-SCALE_SMOOTH)+sz_tgt[0]*SCALE_SMOOTH), int(sz[1]*(1-SCALE_SMOOTH)+sz_tgt[1]*SCALE_SMOOTH)
+                sz = (w, h)
+                cx, cy = int(box[0]+box[2]/2), int(box[1]+box[3]/2)
+                box_draw = (cx-w//2, cy-h//2, w, h)
             else:
-                tracking_active, frames_since_lost = False, 0
+                active, lost = False, 0
 
-        if not tracking_active:
-            cv2.putText(frame, "Object lost! Searching...", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
-            if frame_count % REDETECTION_INTERVAL == 0:
-                det_results = model(frame, verbose=False, imgsz=416, conf=YOLO_CONFIDENCE_THRESHOLD, classes=[target_class_id])
-                
-                reacquired_box = None
-                if ENABLE_RE_IDENTIFICATION:
-                    # --- Re-ID Logic: Find the best visual match ---
-                    best_match_score, best_match_box = -1, None
-                    for box_det in det_results[0].boxes:
-                        candidate_box = tuple(map(int, box_det.xyxy[0].cpu().numpy())); candidate_box = (candidate_box[0], candidate_box[1], candidate_box[2] - candidate_box[0], candidate_box[3] - candidate_box[1])
-                        candidate_features = get_color_histogram(frame, candidate_box)
-                        if candidate_features is None: continue
-                        similarity = cv2.compareHist(tracked_features, candidate_features, cv2.HISTCMP_CORREL)
-                        if similarity > best_match_score: best_match_score, best_match_box = similarity, candidate_box
-                    if best_match_box and best_match_score > REID_SIMILARITY_THRESHOLD:
-                        reacquired_box = best_match_box
-                        print(f"Re-acquired original target with similarity: {best_match_score:.2f}")
+        if not active:
+            cv2.putText(frm, "Object lost! Searching...", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0,0,255), 2)
+            if cnt % REDET_INT == 0:
+                det = mdl(frm, verbose=False, imgsz=416, conf=YOLO_CONF, classes=[cls_id])
+
+                reacq = None
+                if REID:
+                    best_score, best_box = -1, None
+                    for b in det[0].boxes:
+                        cbox = tuple(map(int, b.xyxy[0].cpu().numpy()))
+                        cbox = (cbox[0], cbox[1], cbox[2]-cbox[0], cbox[3]-cbox[1])
+                        cfeat = get_hist(frm, cbox)
+                        if cfeat is None: continue
+                        sim = cv2.compareHist(feat0, cfeat, cv2.HISTCMP_CORREL)
+                        if sim > best_score: best_score, best_box = sim, cbox
+                    if best_box and best_score > REID_TH:
+                        reacq = best_box
+                        print(f"Re-acquired original target with similarity: {best_score:.2f}")
                 else:
-                    # --- Simple Logic: Grab the first available target ---
-                    if len(det_results[0].boxes) > 0:
-                        box_det = det_results[0].boxes[0]
-                        reacquired_box = tuple(map(int, box_det.xyxy[0].cpu().numpy()))
-                        reacquired_box = (reacquired_box[0], reacquired_box[1], reacquired_box[2] - reacquired_box[0], reacquired_box[3] - reacquired_box[1])
+                    if len(det[0].boxes) > 0:
+                        b = det[0].boxes[0]
+                        reacq = tuple(map(int, b.xyxy[0].cpu().numpy()))
+                        reacq = (reacq[0], reacq[1], reacq[2]-reacq[0], reacq[3]-reacq[1])
                         print("Re-acquired first available target (Re-ID disabled).")
 
-                if reacquired_box:
-                    tracker, tracking_active = create_tracker(TRACKER_TYPE), True
-                    tracker.init(frame, reacquired_box)
-                    current_size, target_size = (reacquired_box[2], reacquired_box[3]), (reacquired_box[2], reacquired_box[3])
-                    final_box_to_draw = reacquired_box
+                if reacq:
+                    trk, active = make_trk(TRK), True
+                    trk.init(frm, reacq)
+                    sz, sz_tgt = (reacq[2], reacq[3]), (reacq[2], reacq[3])
+                    box_draw = reacq
 
-        if final_box_to_draw:
-            p1, p2 = (final_box_to_draw[0], final_box_to_draw[1]), (final_box_to_draw[0] + final_box_to_draw[2], final_box_to_draw[1] + final_box_to_draw[3])
-            cv2.rectangle(frame, p1, p2, (0, 255, 0), 2)
+        if box_draw:
+            p1, p2 = (box_draw[0], box_draw[1]), (box_draw[0]+box_draw[2], box_draw[1]+box_draw[3])
+            cv2.rectangle(frm, p1, p2, (0,255,0), 2)
 
-        fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
-        cv2.putText(frame, f"FPS: {int(fps)} ({TRACKER_TYPE})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.imshow("Hybrid Tracking Mode", frame)
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - t0)
+        fps_sum += fps
+
+        cv2.putText(frm, f"FPS: {int(fps)} ({TRK})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+        cv2.imshow("Hybrid Tracking Mode", frm)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+
+    if cnt > 0:
+        avg_fps = fps_sum / cnt
+        print(f"\nHybrid Tracking Mode finished. Average FPS: {avg_fps:.2f}")
 
 if __name__ == "__main__":
     main()

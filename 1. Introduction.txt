@@ -1,0 +1,148 @@
+1. Introduction
+
+One of the essential topics in analyzing visual and video signals, and following the movement of dynamic objects in time, is object tracking. In the field of electrical engineering and especially in the field of signal and system processing, video can be considered as a two-dimensional temporal signal. In this signal, each frame contains spatial information and its correlation with the next and previous frames indicates temporal information. We can estimate the state of a moving object in time based on the frame-by-frame information, probabilistic filtering, and even the nature of a system that generates and filters the frames.
+
+In this project, the design and implementation of a relatively simple system is aimed at recognizing objects and, in video, estimating their status in subsequent frames. The overall structure includes:
+
+Initial Detection: After initial video processing, using a pre-trained model capable of learning object locations, the goal (for example, a human or a car) is to identify one of the pre-trained objects, and the goal is only to determine the initial location of the object.
+
+Object Tracking: After the initial detection, the object tracking continues. In this stage, the aim is to reconstruct the object's movement trajectory in subsequent video frames with sufficient accuracy. In this project, with inspiration from existing tracking and implementation methods, we will use the available information from the frames to predict the object's status in time.
+
+The main point in this project, using the dependencies of temporal information between frames, which is one of the fundamental principles in motion analysis, is based on the temporal and dynamic continuity of the system. The goal is to provide a better estimate of the state of the object while tracking and with less computational resources.
+
+2. Detection Algorithms
+
+Object detection is one of the fundamental problems in computer vision and image processing that aims to identify and classify objects and the type of objects present in an image or video frame. Unlike manual labeling, object detection only recognizes the presence or absence of a specific class in the frame. Object detection combines two fundamental tasks: localization and classification. Simultaneously, the output of the detection algorithm usually includes a bounding box around the object's location, along with a classification label for the detected object.
+
+In recent years, deep learning models, especially convolutional neural networks (CNNs), have shown significant progress in the accuracy and speed of object detection. These models usually leverage pre-trained networks trained on large datasets like ImageNet and COCO and can be partially fine-tuned for specific tasks.
+
+In this project, for initial object detection, we can use one of the common and ready-to-use models. Below, several widely used models are briefly introduced:
+
+YOLO: A family of fast detection models that processes each image in a single pass. YOLO's architecture is very suitable for real-time applications. Various versions of YOLOv5, YOLOv8, and YOLOv11 have been developed so far.
+
+Faster R-CNN: One of the accurate detection algorithms that first proposes regions of interest and then analyzes each region separately. Although it is very good in terms of accuracy, it is much heavier computationally than YOLO.
+
+Choosing a suitable model depends on the project's requirements, such as time constraints and the ability to run in simple processing environments. In this project, the detection model will only be used for initial object identification, and after that, independent tracking of objects will continue. Therefore, the chosen model should be able to provide precise and reliable object locations in the initial frames.
+
+3. Tracking
+
+In this section, we will become familiar with some tracking algorithms. We will compare MOSSE, CSRT, and KCF algorithms. In the rest of this project, you will be tasked with finding and using these algorithms.
+
+3-1 CSRT Algorithm
+
+The CSRT algorithm is one of the most advanced methods in the field of object tracking in images and videos. This algorithm, part of the ensemble of correlation-based filters, performs robust tracking, even in challenging conditions such as partial occlusion. The main goal is to improve the accuracy of the tracking.
+
+In addition to robustness, it extracts a rich set of features. For example, color gradients are represented by 10 color channels and 4 texture channels; all of these features are used as input for learning a filter h_k. The goal of learning each filter is to obtain the best correlation response locally. Overall, the final response of the algorithm is obtained by summing the correlation responses:
+
+R = sum_{k=1}^{K} h_k * x_k
+
+where * indicates the correlation operation (a convolution in reverse).
+
+In addition to the correlation operation, the CSRT algorithm also uses a spatial reliability map (spatial reliability map), which is used to weigh the importance of each pixel p in the training region. This weighting helps to distinguish between the background and the foreground (surroundings).
+
+Typically, the background is modeled by a Gaussian mixture distribution. The filter parameters are optimized by solving the following problem, taking into account the spatial reliability map:
+
+min_{h_p} sum_{p} w(p) || (h_p * x_p) - y(p) ||^2 + lambda || h_p ||^2
+
+where y(p) is the desired response (usually a Gaussian function centered at the object), and lambda is a regularization parameter that prevents overfitting.
+
+In the new frame, after applying the learned filters on the new search region, a new reliability map is calculated and a new background model B_t is updated. Then, the filter is gradually updated to improve the tracking, and the learning rate is incrementally adjusted.
+
+3-2 MOSSE Algorithm
+
+The MOSSE algorithm is one of the first and fastest methods based on correlation filters for object tracking in video. This algorithm is designed to be able to track objects at very high frame rates (even more than 60 frames per second), while minimizing computational costs.
+
+In MOSSE, the main idea is that the filter H is trained on given training images f, and the resulting output g is close to the desired response. Then, the filter is chosen in a way that minimizes the sum of squared errors between the actual response and the desired response:
+
+min_{H} sum_{i} || f_i * h - g_i ||^2
+
+To increase the speed of calculations, optimization in the frequency domain is performed using the Fourier transform. In this case, the correlation response is written as follows:
+
+H = (sum_i F_i* G_i) / (sum_i F_i* F_i)
+
+where F_i is the Fourier transform of the training image, G_i is the Fourier transform of the desired response, and F_i* denotes the complex conjugate of F_i.
+
+During the tracking process, filter H is applied to the new search region to obtain the response and the object's position is determined at the peak value of the predicted response. Then, if the algorithm detects that the predicted response is reliable, the filter is also updated adaptively using information from new frames.
+
+The MOSSE algorithm is very fast and in some cases robust to illumination changes, noise, and small-scale variations. However, since it only uses low-level features and complex visual information is not taken into account, its performance is less in challenging situations such as severe occlusions and complex background changes.
+
+In summary, the MOSSE algorithm is suitable for applications requiring robust tracking and high speed, and it is the hidden heart of many robotic and MOSSE systems.
+
+3-3 KCF Algorithm (Kernelized Correlation Filters)
+
+The KCF algorithm is one of the most effective and fast methods in object tracking that is an improvement over the MOSSE algorithm. Its main difference is the use of correlation filters in a non-linear feature space with the help of kernels. This allows the algorithm to learn complex relationships between features and the target region.
+
+In this algorithm, features like Histogram of Oriented Gradients (HOG) are first extracted from the image. Then, the goal is to learn a filter w such that for a given input x_i, the output of the kernel φ(x_i)^T w has the highest Gaussian-like response. The learning model is formulated as follows:
+
+min_{w} sum_{i} || φ(x_i)^T w - y_i ||^2 + λ || w ||^2
+
+where:
+* φ(x_i): feature mapping of sample x_i to the kernel space
+* y_i: desired response value
+* λ: regularization parameter for preventing overfitting
+
+Using the Representer Theorem, the solution for w in terms of a linear combination of kernel samples is obtained:
+
+w = sum_{i} α_i φ(x_i)
+
+This leads to:
+α = (K + λ I)^-1 y
+
+where K is the kernel matrix with elements K_ij = k(x_i, x_j). To reduce the computational cost, circulant structures and the Fourier transform are used:
+
+α_hat = y_hat / (k_hat + λ)
+
+In each frame, the learned filter is applied to the search region to obtain the response, and the object's position is determined by finding the peak response. To adapt to apparent changes, the filter is gradually updated:
+
+α_hat_t = (1 - η) α_hat_{t-1} + η α_hat_{new}
+
+where η is the learning rate, and α_hat_{new} is the response obtained from the new features.
+Typically, a Gaussian kernel is used to define similarity between samples:
+
+k(x, x') = exp(-( || x - x' ||^2 ) / σ^2)
+
+The KCF algorithm, by utilizing computations in the frequency domain and non-linear kernels, offers high speed and suitable accuracy, making it very suitable for applications like real-time object tracking in live videos.
+
+4. Your Algorithm
+
+In this section, using your own creative ideas and inspired by the proposed algorithms, you need to design an algorithm for "object detection and tracking." For the detection part, you can use pre-trained models. For the implementation of the tracking part, you should do it yourself.
+
+First, you need to explain your method for extracting and tracking features. Then, explain how the object's apparent size in the image (e.g., its closeness or farness to the camera) changes dynamically. Also, describe how the algorithm's output always conforms to the actual conditions of the object. Furthermore, clarify how the object's appearance changes over time. To prevent lag, especially in dynamic situations, you can use the Kalman filter for estimating and predicting the object's speed and acceleration.
+
+To increase the processing speed, it is recommended to perform some operations, including convolution, in the frequency domain. This method can help reduce computational complexity and improve processing speed.
+
+You should consider the algorithm's performance under various lighting conditions, such as the presence of shadows and direct sunlight, and analyze and evaluate its robustness and accuracy in this regard.
+
+In the design and evaluation of the algorithm, the following criteria are of great importance:
+
+* FPS (Frames Per Second) Tracking Rate
+* Tracking Stability: The object should move smoothly without excessive jumps.
+* Adaptive Update of Trajectory and Tracking Features: Considering the apparent size of the object.
+* Variable Tracking Capability:
+* Adaptive Measurement of Object Size: (Proximity to the camera)
+
+5. Desired Output
+
+A video along with the object(s) to be tracked should be given as input to the algorithm. Your algorithm should perform real-time processing operations on the data and video stream, and the FPS (frames per second processing rate) should be displayed in the output.
+
+Initial detection will be performed by a model, and after the first object identification, the rest of the tracking process will be handled by the algorithm.
+
+Mandatory Part
+
+15 points for correct implementation and detection of the algorithm.
+
+20 points for implementing the three algorithms: CSRT, MOSSE, and KCF (you can use existing libraries).
+
+25 points for innovative ideas and creative aspects in the tracking section.
+
+10 points for comparing tracking algorithms from the perspective of accuracy and processing speed.
+
+10 points for the algorithm's ability to adapt tracking box size relative to the camera's distance and proximity.
+
+10 points for the processing rate (FPS) in the algorithm (more than 80% of the CSRT algorithm's processing speed).
+
+10 points for maintaining tracking continuity when the object temporarily goes out of view behind other objects.
+
+20 points for simultaneously tracking multiple different objects (first objects), provided the processing speed (FPS) and accuracy of the algorithm are appropriate.
+
+This means your algorithm should work end-to-end, receiving input (video and target object type) and producing output files.
