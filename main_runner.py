@@ -1,18 +1,26 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from custom_tracker import CT
-import argparse
-import time
+from custom_tracker import CustomTracker
 import sys
-import traceback
+import time
+import argparse
 
-VID = "person4.mp4"
-OBJ = "person"
-MODEL = "yolov8n.pt"
-CONF = 0.6
+VIDEO_PATH = "person4.mp4"
+TARGET_CLASS_NAME = "person"
+MODEL_NAME = "yolov8n.pt"
+YOLO_CONFIDENCE_THRESHOLD = 0.6 # A balanced confidence
+INITIAL_SEARCH_FRAMES = 20
+Res = 600
+MAX_REENTRY_DISTANCE = 250
+EDGE_MARGINS = {
+    "top": 30,
+    "bottom": 30,
+    "left": 30,
+    "right": 30
+}
 
-CLASSES = {
+YOLO_CLASSES = {
     "person": 0, "bicycle": 1, "car": 2, "motorcycle": 3, "airplane": 4,
     "bus": 5, "train": 6, "truck": 7, "boat": 8, "traffic light": 9,
     "fire hydrant": 10, "stop sign": 11, "parking meter": 12, "bench": 13,
@@ -31,277 +39,626 @@ CLASSES = {
     "clock": 74, "vase": 75, "scissors": 76, "teddy bear": 77, "hair drier": 78,
     "toothbrush": 79
 }
-
-PRESETS = {
-    "person": {"min": 5000, "rmin": 2000, "mode": "normal"},
-    "car": {"min": 8000, "rmin": 3000, "mode": "high_motion"},
-    "dog": {"min": 3000, "rmin": 1500, "mode": "high_motion"},
-    "cat": {"min": 2000, "rmin": 1000, "mode": "smooth"},
-    "bicycle": {"min": 6000, "rmin": 2500, "mode": "normal"},
-    "laptop": {"min": 4000, "rmin": 2000, "mode": "smooth"}
+OBJECT_PRESETS = {
+    "person": {"min_area": 500, "redetect_min_area": 200, "tracking_mode": "normal"},
+    "car": {"min_area": 100, "redetect_min_area": 50, "tracking_mode": "high_motion"},
+    "dog": {"min_area": 3000, "redetect_min_area": 1500, "tracking_mode": "high_motion"},
+    "cat": {"min_area": 2000, "redetect_min_area": 1000, "tracking_mode": "smooth"},
+    "bicycle": {"min_area": 6000, "redetect_min_area": 2500, "tracking_mode": "normal"},
+    "motorcycle": {"min_area": 7000, "redetect_min_area": 3000, "tracking_mode": "high_motion"},
+    "bottle": {"min_area": 1000, "redetect_min_area": 500, "tracking_mode": "smooth"},
+    "laptop": {"min_area": 4000, "redetect_min_area": 2000, "tracking_mode": "smooth"}
 }
 
-def args():
-    p = argparse.ArgumentParser(description='Advanced Multi-Object Tracking System')
-    p.add_argument('--object', '-o', type=str, help='Object to track')
-    p.add_argument('--video', '-v', type=str, help='Video path')
-    p.add_argument('--confidence', '-c', type=float, help='YOLO confidence threshold')
-    p.add_argument('--ad', action='store_true', help='Enable auto re-detection')
-    p.add_argument('--hd', action='store_true', help='Enable history re-detection')
-    p.add_argument('--mode', '-m', type=str, choices=['smooth', 'normal', 'high_motion'], help='Tracking mode')
-    p.add_argument('--list', '-l', action='store_true', help='List available objects')
-    return p.parse_args()
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Advanced Multi-Object Tracking System with Edge Detection')
+    parser.add_argument('--object', '-o', type=str, help='Object to track (overrides manual config)')
+    parser.add_argument('--video', '-v', type=str, help='Video path (overrides manual config)')
+    parser.add_argument('--confidence', '-c', type=float, help='YOLO confidence threshold (0.1-1.0)')
+    parser.add_argument('--mode', '-m', type=str, choices=['smooth', 'normal', 'high_motion'], help='Tracking mode')
+    parser.add_argument('--list', '-l', action='store_true', help='List available objects and exit')
+    parser.add_argument('--margin-top', type=int, help='Top edge margin in pixels')
+    parser.add_argument('--margin-bottom', type=int, help='Bottom edge margin in pixels')
+    parser.add_argument('--margin-left', type=int, help='Left edge margin in pixels')
+    parser.add_argument('--margin-right', type=int, help='Right edge margin in pixels')
+    parser.add_argument('--margin-all', type=int, help='Set all margins to same value')
+    parser.add_argument('--reentry-distance', type=int, help='Maximum pixels for re-entry acceptance (default: 100)')
+    
+    return parser.parse_args()
 
-def center(b):
-    x, y, w, h = b
+def is_bbox_in_margin(bbox, frame_shape, margins):
+    """
+    Check if a smaller, centered 'inner box' (half the size) 
+    has touched the edge margins.
+    """
+    if bbox is None:
+        return False
+    
+    x, y, w, h = bbox
+    frame_height, frame_width = frame_shape[:2]
+    inner_w = w // 2
+    inner_h = h // 2
+    inner_x = x + (w - inner_w) // 2
+    inner_y = y + (h - inner_h) // 2
+    in_top_margin = inner_y < margins["top"]
+    in_bottom_margin = (inner_y + inner_h) > (frame_height - margins["bottom"])
+    in_left_margin = inner_x < margins["left"]
+    in_right_margin = (inner_x + inner_w) > (frame_width - margins["right"])
+    
+    return in_top_margin or in_bottom_margin or in_left_margin or in_right_margin
+
+def calculate_bbox_features(frame, bbox):
+    """Calculate features for bbox verification"""
+    if bbox is None:
+        return None
+    
+    x, y, w, h = bbox
+    roi = frame[y:y+h, x:x+w]
+    
+    if roi.size == 0:
+        return None
+    
+    if len(roi.shape) == 3:
+        roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    else:
+        roi_gray = roi
+    
+    features = {
+        'size': (w, h),
+        'aspect_ratio': w / h if h > 0 else 1.0,
+        'histogram': cv2.calcHist([roi_gray], [0], None, [32], [0, 256]),
+        'mean_intensity': np.mean(roi_gray),
+        'center': (x + w//2, y + h//2)
+    } 
+    return features
+def compare_bbox_features(features1, features2, threshold=0.7):
+    """Compare two sets of bbox features"""
+    if features1 is None or features2 is None:
+        return False
+    
+    w1, h1 = features1['size']
+    w2, h2 = features2['size']
+    size_sim = min(w1*h1, w2*h2) / max(w1*h1, w2*h2) if max(w1*h1, w2*h2) > 0 else 0
+    
+    ar_diff = abs(features1['aspect_ratio'] - features2['aspect_ratio'])
+    ar_sim = max(0, 1 - ar_diff)
+    
+    hist_corr = cv2.compareHist(features1['histogram'], features2['histogram'], cv2.HISTCMP_CORREL)
+    
+    intensity_diff = abs(features1['mean_intensity'] - features2['mean_intensity']) / 255.0
+    intensity_sim = max(0, 1 - intensity_diff)
+    
+    combined_score = (size_sim * 0.3 + ar_sim * 0.2 + hist_corr * 0.3 + intensity_sim * 0.2)
+    
+    return combined_score >= threshold
+
+def get_bbox_center(bbox):
+    x, y, w, h = bbox
     return (x + w/2, y + h/2)
 
-def dist(b1, b2):
-    c1 = center(b1)
-    c2 = center(b2)
-    return np.sqrt((c1[0] - c2[0])**2 + (c1[1] - c2[1])**2)
+def get_bbox_distance(bbox1, bbox2):
+    center1 = get_bbox_center(bbox1)
+    center2 = get_bbox_center(bbox2)
+    return np.sqrt((center1[0] - center2[0])**2 + (center1[1] - center2[1])**2)
 
-def size_sim(b1, b2):
-    _, _, w1, h1 = b1
-    _, _, w2, h2 = b2
-    a1 = w1 * h1
-    a2 = w2 * h2
-    if a1 == 0 or a2 == 0: return 0
-    return min(a1, a2) / max(a1, a2)
+def get_bbox_size_similarity(bbox1, bbox2):
+    _, _, w1, h1 = bbox1
+    _, _, w2, h2 = bbox2 
+    area1 = w1 * h1
+    area2 = w2 * h2
+    if area1 == 0 or area2 == 0:
+        return 0
+    ratio = min(area1, area2) / max(area1, area2)
+    return ratio
 
-def best_det(boxes, min_area, cid=None):
-    best = None
-    score = 0
-    best_cid = None
-    for b in boxes:
-        xyxy = b.xyxy[0].cpu().numpy()
-        conf = b.conf[0].cpu().numpy()
-        cls = int(b.cls[0].cpu().numpy())
-        if cid is not None and cls != cid:
-            continue
-        w = xyxy[2] - xyxy[0]
-        h = xyxy[3] - xyxy[1]
-        area = w * h
-        if area > min_area and conf > score:
-            score = conf
-            best = b
-            best_cid = cls
-    return best, score, best_cid
+def find_best_matching_detection(current_box, detections, history):
 
-def best_match(cur, dets, hist):
-    if not dets:
-        return None
-    best = None
-    score = -1
-    for d in dets:
-        xyxy = d.xyxy[0].cpu().numpy()
-        conf = d.conf[0].cpu().numpy()
-        db = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
-        dscore = max(0, 1 - (dist(cur, db) / 200))
-        sscore = size_sim(cur, db)
-        hscore = 0
-        if hist:
-            hdist = [dist(hb, db) for hb in hist[-5:]]
-            hscore = max(0, 1 - (np.mean(hdist) / 200))
-        tscore = (dscore * 0.4 + sscore * 0.3 + hscore * 0.2 + conf * 0.1)
-        if tscore > score:
-            score = tscore
-            best = d
-    return best
+    best_score = -1
+    best_match = None
+    ref_box = history[-1] if len(history) > 0 else current_box
+    for detection in detections:
+        xyxy = detection.xyxy[0].cpu().numpy()
+        confidence = detection.conf[0].cpu().numpy()
+        new_bbox = (int(xyxy[0]), int(xyxy[1]), 
+                    int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
 
-def cname(cid):
-    for n, i in CLASSES.items():
-        if i == cid:
-            return n
-    return f"class_{cid}"
+        distance = get_bbox_distance(ref_box, new_bbox)
+        size_sim = get_bbox_size_similarity(ref_box, new_bbox)
+        max_dist = 300
+        dist_score = max(0, 1 - (distance / max_dist))
+        combined_score = (dist_score * 0.4) + (size_sim * 0.4) + (confidence * 0.2)
 
-def list_objs():
+        if combined_score > best_score:
+            best_score = combined_score
+            best_match = detection
+            
+    if best_score > 0.5:
+        return best_match
+        
+    return None
+
+def get_best_detection(boxes, min_area, target_class_id=None):
+    best_box = None
+    best_score = 0
+    best_class_id = None
+    for box in boxes:
+        xyxy = box.xyxy[0].cpu().numpy()
+        confidence = box.conf[0].cpu().numpy()
+        class_id = int(box.cls[0].cpu().numpy())
+        if target_class_id is not None and class_id != target_class_id:
+            continue     
+        width = xyxy[2] - xyxy[0]
+        height = xyxy[3] - xyxy[1]
+        area = width * height
+        
+        if area > min_area and confidence > best_score:
+            best_score = confidence
+            best_box = box
+            best_class_id = class_id
+    return best_box, best_score, best_class_id
+
+def get_class_name(class_id):
+    for name, id_val in YOLO_CLASSES.items():
+        if id_val == class_id:
+            return name
+    return f"class_{class_id}"
+
+def list_available_objects():
     print("\nAvailable preset objects:")
-    for n, c in PRESETS.items():
-        print(f"  '{n}' -> {c.get('mode', 'normal')} mode")
-    print(f"\nAll YOLO classes ({len(CLASSES)} total):")
-    for i, (n, cid) in enumerate(CLASSES.items()):
-        if i > 0 and i % 4 == 0:
+    for name, config in OBJECT_PRESETS.items():
+        mode = config.get('tracking_mode', 'normal')
+        print(f"  '{name}' -> {mode} mode")
+    
+    print(f"\nAll YOLO classes ({len(YOLO_CLASSES)} total):")
+    for i, (name, class_id) in enumerate(YOLO_CLASSES.items()):
+        if i % 4 == 0:
             print()
-        print(f"  {n:15} (ID:{cid:2d})", end="")
+        print(f"  {name:15} (ID:{class_id:2d})", end="")
     print("\n")
 
+def draw_margin_lines(frame, margins):
+    height, width = frame.shape[:2]
+    overlay = frame.copy()
+    cv2.line(overlay, (0, margins["top"]), (width, margins["top"]), (255, 255, 0), 2)
+    cv2.line(overlay, (0, height - margins["bottom"]), (width, height - margins["bottom"]), (255, 255, 0), 2)
+    cv2.line(overlay, (margins["left"], 0), (margins["left"], height), (255, 255, 0), 2)
+    cv2.line(overlay, (width - margins["right"], 0), (width - margins["right"], height), (255, 255, 0), 2)
+    cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
+
 def main():
-    a = args()
-    if a.list:
-        list_objs()
+    args = parse_arguments()
+    
+    if args.list:
+        list_available_objects()
         return
-    obj = a.object if a.object else OBJ
-    vid = a.video if a.video else VID
-    conf = a.confidence if a.confidence else CONF
-    auto = a.ad
-    hist = a.hd
+    target_class_name = args.object if args.object else TARGET_CLASS_NAME
+    video_path = args.video if args.video else VIDEO_PATH
+    confidence_threshold = args.confidence if args.confidence else YOLO_CONFIDENCE_THRESHOLD
+    
+    margins = EDGE_MARGINS.copy()
+    if args.margin_all:
+        margins = {k: args.margin_all for k in margins.keys()}
+    else:
+        if args.margin_top: margins["top"] = args.margin_top
+        if args.margin_bottom: margins["bottom"] = args.margin_bottom
+        if args.margin_left: margins["left"] = args.margin_left
+        if args.margin_right: margins["right"] = args.margin_right
+    
+    max_reentry_distance = args.reentry_distance if args.reentry_distance else MAX_REENTRY_DISTANCE
 
-    if obj.lower() not in CLASSES:
-        print(f"Error: Unknown object '{obj}'")
-        list_objs()
+    if target_class_name.lower() in YOLO_CLASSES:
+        target_class_id = YOLO_CLASSES[target_class_name.lower()]
+    else:
+        print(f"Error: Unknown object '{target_class_name}'")
+        list_available_objects()
         return
-    cid = CLASSES[obj.lower()]
-
-    cfg = PRESETS.get(obj.lower(), {"min": 3000, "rmin": 1500, "mode": "normal"})
+    
+    object_config = OBJECT_PRESETS.get(target_class_name.lower(), {
+        "min_area": 3000, "redetect_min_area": 1500, "tracking_mode": "normal"
+    })
+    
     print(f"Configuration:")
-    print(f"  Target: {obj} (class_id: {cid})")
-    print(f"  Video: {vid}")
-    print(f"  Confidence: {conf}")
-    print(f"  Min Area: {cfg['min']}")
-
-    m = YOLO(MODEL)
-    cap = cv2.VideoCapture(vid)
-    if not cap.isOpened():
-        print(f"Error opening video {vid}")
+    print(f"  Target: {target_class_name} (class_id: {target_class_id})")
+    print(f"  Video: {video_path}")
+    print(f"  Confidence: {confidence_threshold}")
+    print(f"  Tracking Mode: {object_config['tracking_mode']}")
+    print(f"  Edge Margins: {margins}")
+    print(f"  Max Re-entry Distance: {max_reentry_distance}px")
+    
+    print("\nLoading YOLO model...")
+    try:
+        model = YOLO(MODEL_NAME)
+        model.overrides['verbose'] = False
+        model.overrides['device'] = 'cuda' if cv2.cuda.getCudaEnabledDeviceCount() > 0 else 'cpu'
+        print(f"Using device: {model.overrides['device']}")
+    except Exception as e:
+        print(f"Error loading YOLO model: {e}")
         return
-
-    frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Error opening video {video_path}")
+        return
+    
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0: fps = 30
-    ftime = 1.0 / fps
+    frame_time = 1.0 / fps
+    
+    initial_bbox = None
+    initial_frame = None
+    confidence = 0.0
+    
+    print(f"\nSearching for '{target_class_name}' in the first {INITIAL_SEARCH_FRAMES} frames...")
 
-    ok, frame = cap.read()
-    if not ok: return
+    for frame_num in range(INITIAL_SEARCH_FRAMES):
+        success, frame = cap.read()
+        if not success:
+            print(f"  -> End of video or read error at frame {frame_num + 1}.")
+            cap.release()
+            return
+            
+        print(f"  Analyzing frame {frame_num + 1}/{INITIAL_SEARCH_FRAMES}...")
+        results = model(frame, imgsz=Res, verbose=False, classes=[target_class_id], conf=confidence_threshold)
+        
+        best_box, conf, detected_class_id = get_best_detection(
+            results[0].boxes, object_config['min_area'], target_class_id
+        )
+        
+        if best_box is not None:
+            xyxy = best_box.xyxy[0].cpu().numpy()
+            initial_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+            initial_frame = frame
+            confidence = conf
+            print(f"Initial detection successful in frame {frame_num + 1}: {initial_bbox} (confidence: {confidence:.3f})")
+            break
 
-    print(f"\nDetecting initial {obj}...")
-    res = m(frame, verbose=False, classes=[cid], conf=conf)
-    b, c, dcid = best_det(res[0].boxes, cfg['min'], cid)
-    if b is None:
-        print(f"No suitable {obj} detection found.")
+    if initial_bbox is None:
+        print(f"\nCould not find a suitable '{target_class_name}' in the first {INITIAL_SEARCH_FRAMES} frames.")
+        cap.release()
         return
 
-    xyxy = b.xyxy[0].cpu().numpy()
-    ibox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
-
-    t = CT()
-    mode = a.mode if a.mode else cfg['mode']
-    t.set_tm(mode)
-    print(f"  Tracking Mode: {t.tm}")
-    t.init(frame, ibox)
-
-    bhist = [ibox]
-    pause = False
-    flimit = False
-    rc = 0
-    hc = 0
-
-    fcnt = 0
-    st = time.time()
-    afps = 0
-    fc = 0
-    lft = time.time()
+    frame = initial_frame
+    
+    tracker = CustomTracker()
+    tracking_mode = args.mode if args.mode else object_config['tracking_mode']
+    tracker.set_tracking_mode(tracking_mode)
+    
+    if not tracker.init(frame, initial_bbox):
+        print("Failed to initialize main tracker")
+        cap.release()
+        return
+    aux_tracker = None
+    tracker_types = ['MIL']
+    for tracker_type in tracker_types:
+        try:
+            if hasattr(cv2, f'Tracker{tracker_type}_create'):
+                aux_tracker = getattr(cv2, f'Tracker{tracker_type}_create')()
+                aux_tracker.init(frame, initial_bbox)
+                print(f"Initialized auxiliary {tracker_type} tracker")
+                break
+            elif hasattr(cv2.legacy, f'Tracker{tracker_type}_create'):
+                aux_tracker = getattr(cv2.legacy, f'Tracker{tracker_type}_create')()
+                aux_tracker.init(frame, initial_bbox)
+                print(f"Initialized auxiliary {tracker_type} tracker (legacy)")
+                break
+        except Exception as e:
+            print(f"Failed to initialize {tracker_type} tracker: {e}")
+            continue
+    
+    aux_tracker_available = aux_tracker is not None
+    reference_features = calculate_bbox_features(frame, initial_bbox)
+    bbox_history = [initial_bbox]
+    aux_features_history = [reference_features]
+    
+    print(f"\nControls:")
+    print("  'q' - quit, 'p' - pause")
+    print("  'r' - correct current tracker")
+    print("  'd' - hard reset detection to best new object")
+    print("  's/n/h' - tracking modes, 'f' - toggle FPS limit")
+    
+    frame_count = 0
+    paused = False
+    show_margins = False
+    last_frame_time = time.time()
+    fps_limited = False
+    actual_fps = 0
+    fps_start_time = time.time()
+    fps_frame_count = 0
+    auto_redetect = True
+    redetect_counter = 0
+    object_in_margin = False
+    last_valid_bbox = initial_bbox
+    pending_verification = False
+    verification_counter = 0
+    pending_bbox = None
+    aux_update_counter = 0
+    background_detection_counter = 0
+    exit_position = None
+    box = initial_bbox
+    tracking_success = True
 
     while True:
-        if not pause:
-            fcnt += 1
-            ok, frame = cap.read()
-            if not ok: break
+        if not paused:
+            if frame_count > 0:
+                success, frame = cap.read()
+                if not success:
+                    print("End of video or read error")
+                    break
+            frame_count += 1
+            
+        if object_in_margin:
+            background_detection_counter += 1
+            if background_detection_counter >= 5:
+                background_detection_counter = 0
+                results = model(frame, imgsz=Res, verbose=False, classes=[target_class_id], conf=confidence_threshold * 0.7)
+                
+                if len(results[0].boxes) > 0:
+                    best_match = None
+                    best_score = 0
+                    
+                    for box_det in results[0].boxes:
+                        xyxy = box_det.xyxy[0].cpu().numpy()
+                        det_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                        
+                        if not is_bbox_in_margin(det_bbox, frame.shape, margins):
+                            det_center = get_bbox_center(det_bbox)
+                            distance_from_exit = float('inf')
+                            if exit_position is not None:
+                                distance_from_exit = np.sqrt((det_center[0] - exit_position[0])**2 + (det_center[1] - exit_position[1])**2)
+                            if distance_from_exit <= max_reentry_distance:
+                                det_features = calculate_bbox_features(frame, det_bbox)
+                                match_score = 0
+                                if aux_tracker_available and len(aux_features_history) > 0:
+                                    for aux_feat in aux_features_history[-3:]:
+                                        if compare_bbox_features(det_features, aux_feat, 0.5):
+                                            match_score += 1
+                                else:
+                                    distance = get_bbox_distance(last_valid_bbox, det_bbox)
+                                    size_sim = get_bbox_size_similarity(last_valid_bbox, det_bbox)
+                                    if distance < 150 and size_sim > 0.5:
+                                        match_score = 2
+                                
+                                if match_score > best_score:
+                                    best_score = match_score
+                                    best_match = box_det
+                    
+                    if best_match is not None and best_score >= 1:
+                        xyxy = best_match.xyxy[0].cpu().numpy()
+                        new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
 
-            ts, box = t.upd(frame)
-            if ts and box:
-                bhist.append(box)
-                if len(bhist) > 20: bhist.pop(0)
+                        pending_verification = True
+                        verification_counter = 1
+                        pending_bbox = new_bbox
+                        object_in_margin = False
+                        
+                        print(f"Re-entry candidate found. Starting 3-frame verification...")
 
-            if auto and not ts:
-                rc += 1
-                if rc >= int(fps / 2):
-                    rc = 0
-                    res = m(frame, verbose=False, classes=[cid], conf=conf * 0.8)
-                    b2, c2, _ = best_det(res[0].boxes, cfg['rmin'], cid)
-                    if b2 is not None:
-                        xyxy = b2.xyxy[0].cpu().numpy()
-                        nb = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
-                        if t.init(frame, nb):
-                            ts, box = True, nb
-                            bhist.append(nb)
+        elif pending_verification:
+            results = model(frame, imgsz=Res, verbose=False, classes=[target_class_id], conf=confidence_threshold * 0.7)
+            best_match = None
+            if len(results[0].boxes) > 0:
+                best_match = find_best_matching_detection(pending_bbox, results[0].boxes, [pending_bbox])
 
-            if hist and ts and box:
-                hc += 1
-                if hc >= 7:
-                    hc = 0
-                    res = m(frame, verbose=False, classes=[cid], conf=conf * 0.7)
-                    if len(res[0].boxes) > 0:
-                        bm = best_match(box, res[0].boxes, bhist)
-                        if bm is not None:
-                            xyxy = bm.xyxy[0].cpu().numpy()
-                            nb = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
-                            if dist(box, nb) > 50:
-                                t.init(frame, nb)
-                                ts, box = True, nb
-                                bhist.append(nb)
+            if best_match is not None:
+                verification_counter += 1
+                xyxy = best_match.xyxy[0].cpu().numpy()
+                pending_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                print(f"Verification success: {verification_counter}/3")
 
-        # This part runs even when paused
-        disp = frame.copy()
-        if ts and box is not None:
+                if verification_counter >= 3:
+                    print("Verification successful! Resuming normal tracking.")
+                    if tracker.init(frame, pending_bbox):
+                        if aux_tracker_available:
+                            try:
+                                aux_tracker.init(frame, pending_bbox)
+                            except Exception as e:
+                                print(f"Failed to reinitialize auxiliary tracker: {e}")
+                        last_valid_bbox = pending_bbox
+                        box = pending_bbox
+                        tracking_success = True
+                    
+                    pending_verification = False
+                    verification_counter = 0
+                    pending_bbox = None
+            else:
+                print("Verification failed. Returning to search mode.")
+                pending_verification = False
+                verification_counter = 0
+                pending_bbox = None
+                object_in_margin = True
+
+        else: # Normal Tracking
+            if not paused:
+                tracking_success, box = tracker.update(frame)
+
+            current_in_margin = is_bbox_in_margin(box, frame.shape, margins)
+
+            if tracking_success and box is not None and not current_in_margin and aux_tracker_available:
+                aux_update_counter += 1
+                if aux_update_counter >= 5:
+                    aux_update_counter = 0
+                    try:
+                        aux_success, aux_box = aux_tracker.update(frame)
+                        if aux_success:
+                            aux_features = calculate_bbox_features(frame, aux_box)
+                            if aux_features:
+                                aux_features_history.append(aux_features)
+                                if len(aux_features_history) > 10:
+                                    aux_features_history.pop(0)
+                    except Exception as e:
+                        aux_tracker_available = False
+                last_valid_bbox = box
+
+            if current_in_margin and not object_in_margin:
+                if box is not None:
+                    exit_position = get_bbox_center(box)
+                object_in_margin = True
+                background_detection_counter = 0
+
+            if auto_redetect and not object_in_margin and tracking_success and box is not None:
+                bbox_history.append(box)
+                if len(bbox_history) > 20:
+                    bbox_history.pop(0)
+                redetect_counter += 1
+                if redetect_counter >= 8:
+                    redetect_counter = 0
+
+                    results = model(frame, imgsz=Res, verbose=False, classes=[target_class_id], conf=confidence_threshold * 0.78)
+                    
+                    if len(results[0].boxes) > 0:
+                        best_match = find_best_matching_detection(box, results[0].boxes, bbox_history)
+                        
+                        if best_match is not None:
+                            xyxy = best_match.xyxy[0].cpu().numpy()
+                            confidence = best_match.conf[0].cpu().numpy()
+                            new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                            
+                            distance = get_bbox_distance(box, new_bbox)
+                            size_sim = get_bbox_size_similarity(box, new_bbox)
+                            
+                            if distance > 40 or size_sim < 0.75:
+                                if tracker.init(frame, new_bbox):
+                                    print(f"Auto-Correction successful: Dist: {distance:.1f}px, SizeSim: {size_sim:.2f}")
+                                    box = new_bbox
+
+        display_frame = frame.copy()
+        if show_margins:
+            draw_margin_lines(display_frame, margins)
+        
+        if pending_verification:
+            status_text = f"Verifying Re-entry... ({verification_counter}/3)"
+            cv2.putText(display_frame, status_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        elif tracking_success and box is not None and not object_in_margin:
             x, y, w, h = box
-            cv2.rectangle(disp, (x, y), (x + w, y + h), (0, 255, 0), 3)
-            cv2.putText(disp, f"Tracking: {len(t.tr)} features", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 255, 0), 3)
+            cv2.putText(display_frame, f"Tracking: {len(tracker.tracks)} features", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        elif object_in_margin:
+            cv2.putText(display_frame, "Object in margin - Searching...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
         else:
-            cv2.putText(disp, f"TRACKING LOST - Frame {fcnt}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
-            cv2.putText(disp, "Press 'r' for manual detection or 'f' for auto mode", (50, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            cv2.putText(display_frame, f"TRACKING LOST", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
+        
+        info_y = 30
+        cv2.putText(display_frame, f"Target: {target_class_name}", (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        info_y += 25
+        fps_color = (0, 255, 255) if fps_limited else (255, 255, 255)
+        fps_text = f"FPS: {actual_fps:.1f}" + (" (Limited)" if fps_limited else "")
+        cv2.putText(display_frame, fps_text, (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, fps_color, 1)
 
-        if not pause:
-            ct = time.time()
-            fc += 1
-            if ct - st >= 1.0:
-                afps = fc / (ct - st)
-                fc = 0
-                st = ct
+        if paused:
+            cv2.putText(display_frame, "PAUSED", (10, display_frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-        iy = 30
-        cv2.putText(disp, f"Target: {obj}", (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        iy += 25
-        cv2.putText(disp, f"Frame: {fcnt}/{frames}", (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        iy += 20
-        cv2.putText(disp, f"Mode: {t.tm.upper()}", (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
-        iy += 20
-        fcol = (0, 255, 255) if flimit else (255, 255, 255)
-        ftxt = f"FPS: {afps:.1f}" + (" (Limited)" if flimit else " (Unlimited)")
-        cv2.putText(disp, ftxt, (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, fcol, 1)
-        iy += 20
-        if auto:
-            cv2.putText(disp, f"Auto-redetect: ON", (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
-            iy += 20
-        if hist:
-            cv2.putText(disp, f"History-redetect: ON ({7-hc})", (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 1)
-            iy += 20
-        if not auto and not hist:
-            cv2.putText(disp, "YOLO-ONCE MODE", (10, iy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 100), 1)
-        if pause:
-            cv2.putText(disp, "PAUSED - Press 'p' to continue, SPACE to step", (10, disp.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv2.imshow(f"Enhanced Tracking - {target_class_name}", display_frame)
 
-        cv2.imshow(f"Tracking - {obj}", disp)
+        if not paused:
+            current_time = time.time()
+            
+            fps_frame_count += 1
+            if current_time - fps_start_time >= 1.0:
+                actual_fps = fps_frame_count / (current_time - fps_start_time)
+                fps_frame_count = 0
+                fps_start_time = current_time
+            
+            if fps_limited:
+                elapsed = current_time - last_frame_time
+                wait_time = max(0, frame_time - elapsed)
+                if wait_time > 0:
+                    time.sleep(wait_time)
+            
+            last_frame_time = time.time()
 
-        if not pause and flimit:
-            el = time.time() - lft
-            wt = max(0, ftime - el)
-            if wt > 0:
-                time.sleep(wt)
-        lft = time.time()
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            break
+        elif key == ord('p'):
+            paused = not paused
+        elif key == ord('m'):
+            show_margins = not show_margins
+        elif key == ord('f'):
+            fps_limited = not fps_limited
+            print(f"FPS Limiter: {'ON' if fps_limited else 'OFF'}")
+        elif key == ord(' ') and paused:
+            success, frame = cap.read()
+            if success:
+                frame_count += 1
+            else:
+                break
+        elif key == ord('r'):
+            print("Manual re-detection (correction)...")
+            results = model(frame, imgsz=Res, verbose=False, classes=[target_class_id], conf=confidence_threshold * 0.7)
+                          
+            if len(results[0].boxes) > 0 and box is not None:
+                best_match = find_best_matching_detection(box, results[0].boxes, bbox_history)
+                
+                if best_match is not None:
+                    xyxy = best_match.xyxy[0].cpu().numpy()
+                    conf = best_match.conf[0].cpu().numpy()
+                    detected_class = int(best_match.cls[0].cpu().numpy())
+                    new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                    if tracker.init(frame, new_bbox):
+                        if aux_tracker_available:
+                            try:
+                                aux_tracker.init(frame, new_bbox)
+                            except Exception as e:
+                                print(f"Failed to reinitialize auxiliary tracker: {e}")
+                        
+                        detected_name = get_class_name(detected_class)
+                        print(f"Correction successful: {detected_name} at {new_bbox} (conf: {conf:.3f})")
+                        object_in_margin = False
+                        last_valid_bbox = new_bbox
+                        box = new_bbox
+                else:
+                    print(f"No suitable matching {target_class_name} found.")
+            else:
+                print("No detections found for manual override.")
 
-        k = cv2.waitKey(1 if not pause else 0) & 0xFF
-        if k == ord('q'): break
-        elif k == ord('p'): pause = not pause
-        elif k == ord(' ') and pause:
-            fcnt += 1
-            ok, frame = cap.read()
-            if not ok: break
-        elif k == ord('f'): auto = not auto
-        elif k == ord('e'): hist = not hist
-        elif k == ord('l'): flimit = not flimit
-        elif k == ord('s'): t.set_tm("smooth")
-        elif k == ord('h'): t.set_tm("high_motion")
-        elif k == ord('n'): t.set_tm("normal")
-        elif k == ord('r'):
-            res = m(frame, verbose=False, classes=[cid], conf=conf * 0.8)
-            b2, c2, _ = best_det(res[0].boxes, cfg['rmin'], cid)
-            if b2 is not None:
-                xyxy = b2.xyxy[0].cpu().numpy()
-                nb = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
-                t.init(frame, nb)
-                bhist.append(nb)
+        elif key == ord('d'):
+            print("Hard re-detection initiated: Searching for best new object...")
+            results = model(frame, imgsz=Res, verbose=False, classes=[target_class_id], conf=confidence_threshold)
 
+            best_box, conf, detected_class_id = get_best_detection(
+                results[0].boxes,
+                object_config['min_area'],
+                target_class_id
+            )
+
+            if best_box is not None:
+                xyxy = best_box.xyxy[0].cpu().numpy()
+                new_bbox = (int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1]))
+                
+                if tracker.init(frame, new_bbox):
+                    if aux_tracker_available:
+                        try:
+                            aux_tracker.init(frame, new_bbox)
+                        except Exception as e:
+                            print(f"Failed to reinitialize auxiliary tracker: {e}")
+                    
+                    detected_name = get_class_name(detected_class_id)
+                    print(f"Hard reset successful: New target is {detected_name} at {new_bbox} (conf: {conf:.3f})")
+                    object_in_margin = False
+                    last_valid_bbox = new_bbox
+                    box = new_bbox
+                    bbox_history = [new_bbox] 
+                    aux_features_history = [calculate_bbox_features(frame, new_bbox)] 
+                else:
+                    print("Failed to initialize tracker on new object.")
+            else:
+                print(f"No suitable '{target_class_name}' found on screen for hard reset.")
+
+        elif key == ord('s'):
+            tracker.set_tracking_mode("smooth")
+        elif key == ord('h'):
+            tracker.set_tracking_mode("high_motion")
+        elif key == ord('n'):
+            tracker.set_tracking_mode("normal")
+
+        try:
+            if cv2.getWindowProperty(f"Enhanced Tracking - {target_class_name}", cv2.WND_PROP_VISIBLE) < 1:
+                break
+        except cv2.error:
+            break
+    print(f"Processed {frame_count} frames")
     cap.release()
     cv2.destroyAllWindows()
 
@@ -312,6 +669,7 @@ if __name__ == "__main__":
         print("\nInterrupted by user")
     except Exception as e:
         print(f"Unexpected error: {e}")
+        import traceback
         traceback.print_exc()
     finally:
         cv2.destroyAllWindows()

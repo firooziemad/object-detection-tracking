@@ -3,14 +3,14 @@ import numpy as np
 from ultralytics import YOLO
 
 # --- 1. MASTER CONFIGURATION ---
-ENABLE_HYBRID_MODE = True
+ENABLE_HYBRID_MODE = False
 # --- NEW: Set to False to disable specific object identification ---
-ENABLE_RE_IDENTIFICATION = True
+ENABLE_RE_IDENTIFICATION = False
 
-VIDEO_PATH = "person4.mp4"
+VIDEO_PATH = "person1.mp4"
 TARGET_CLASS_NAME = "person"
 MODEL_NAME = "yolov8n.pt"
-TRACKER_TYPE = "MOSSE"
+TRACKER_TYPE = "CSRT"
 
 # --- 2. TUNING PARAMETERS (for Hybrid Mode) ---
 HEALTH_CHECK_INTERVAL = 45
@@ -80,6 +80,10 @@ def main():
     cv2.destroyAllWindows()
 
 def run_pure_tracking_mode(cap, tracker):
+    # --- ADDITION: Variables to calculate average FPS ---
+    total_fps = 0
+    frame_count = 0
+    
     while True:
         success, frame = cap.read()
         if not success: break
@@ -88,13 +92,24 @@ def run_pure_tracking_mode(cap, tracker):
         if tracking_success:
             p1, p2 = (int(box[0]), int(box[1])), (int(box[0] + box[2]), int(box[1] + box[3]))
             cv2.rectangle(frame, p1, p2, (0, 255, 0), 2)
+            
         fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+        # --- ADDITION: Accumulate FPS and frame count ---
+        total_fps += fps
+        frame_count += 1
+        
         cv2.putText(frame, f"FPS: {int(fps)} ({TRACKER_TYPE})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         cv2.imshow("Pure Tracking Mode", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+        
+    # --- ADDITION: Calculate and print the average FPS at the end ---
+    if frame_count > 0:
+        avg_fps = total_fps / frame_count
+        print(f"\nPure Tracking Mode finished. Average FPS: {avg_fps:.2f}")
 
 def run_hybrid_mode(cap, tracker, model, initial_bbox, tracked_features):
-    tracking_active, frames_since_lost, frame_count = True, 0, 0
+    # --- MODIFICATION: Added total_fps to track for averaging ---
+    tracking_active, frames_since_lost, frame_count, total_fps = True, 0, 0, 0
     current_size, target_size = (initial_bbox[2], initial_bbox[3]), (initial_bbox[2], initial_bbox[3])
     target_class_id = list(model.names.keys())[list(model.names.values()).index(TARGET_CLASS_NAME.lower())]
 
@@ -166,9 +181,17 @@ def run_hybrid_mode(cap, tracker, model, initial_bbox, tracked_features):
             cv2.rectangle(frame, p1, p2, (0, 255, 0), 2)
 
         fps = cv2.getTickFrequency() / (cv2.getTickCount() - timer)
+        # --- ADDITION: Accumulate total FPS ---
+        total_fps += fps
+        
         cv2.putText(frame, f"FPS: {int(fps)} ({TRACKER_TYPE})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         cv2.imshow("Hybrid Tracking Mode", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+        
+    # --- ADDITION: Calculate and print the average FPS at the end ---
+    if frame_count > 0:
+        avg_fps = total_fps / frame_count
+        print(f"\nHybrid Tracking Mode finished. Average FPS: {avg_fps:.2f}")
 
 if __name__ == "__main__":
     main()
