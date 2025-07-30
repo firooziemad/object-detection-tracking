@@ -6,9 +6,9 @@ import sys
 import time
 import argparse
 
-VIDEO_PATH = "person4.mp4"
-TARGET_CLASS_NAME = "person"
-MODEL_NAME = "yolov8n.pt"
+VIDEO_PATH = "input3.mp4"
+TARGET_CLASS_NAME = "car"
+MODEL_NAME = "yolo11n.pt"
 YOLO_CONFIDENCE_THRESHOLD = 0.6 # A balanced confidence
 INITIAL_SEARCH_FRAMES = 20
 Res = 600
