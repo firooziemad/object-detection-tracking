@@ -1,35 +1,46 @@
-\contentsline {chapter}{\numberline {1}Introduction}{5}{chapter.1}%
-\contentsline {section}{\numberline {1.1}Background and Motivation}{5}{section.1.1}%
-\contentsline {section}{\numberline {1.2}Project Objectives}{5}{section.1.2}%
-\contentsline {section}{\numberline {1.3}Report Structure}{6}{section.1.3}%
-\contentsline {chapter}{\numberline {2}Theoretical Background}{7}{chapter.2}%
-\contentsline {section}{\numberline {2.1}Object Detection Models}{7}{section.2.1}%
-\contentsline {subsection}{\numberline {2.1.1}YOLO (You Only Look Once)}{7}{subsection.2.1.1}%
-\contentsline {subsection}{\numberline {2.1.2}Faster R-CNN}{7}{subsection.2.1.2}%
-\contentsline {section}{\numberline {2.2}Correlation Filter-Based Tracking}{7}{section.2.2}%
-\contentsline {subsection}{\numberline {2.2.1}MOSSE (Minimum Output Sum of Squared Error)}{7}{subsection.2.2.1}%
-\contentsline {subsection}{\numberline {2.2.2}KCF (Kernelized Correlation Filters)}{8}{subsection.2.2.2}%
-\contentsline {subsection}{\numberline {2.2.3}CSRT (Channel and Spatial Reliability Trackers)}{8}{subsection.2.2.3}%
-\contentsline {chapter}{\numberline {3}The Hybrid Adaptive Tracking Algorithm}{9}{chapter.3}%
-\contentsline {section}{\numberline {3.1}System Architecture Overview}{9}{section.3.1}%
-\contentsline {section}{\numberline {3.2}Core Tracking: An Enhanced Correlation Filter}{10}{section.3.2}%
-\contentsline {section}{\numberline {3.3}Motion Prediction and Smoothing with Kalman Filter}{10}{section.3.3}%
-\contentsline {section}{\numberline {3.4}Adaptive Scale Estimation}{10}{section.3.4}%
-\contentsline {section}{\numberline {3.5}Multi-Object Tracking Framework}{11}{section.3.5}%
-\contentsline {chapter}{\numberline {4}Implementation Details}{12}{chapter.4}%
-\contentsline {section}{\numberline {4.1}Environment and Libraries}{12}{section.4.1}%
-\contentsline {section}{\numberline {4.2}Code Structure}{12}{section.4.2}%
-\contentsline {subsection}{\numberline {4.2.1}Initial Detection Snippet}{12}{subsection.4.2.1}%
-\contentsline {subsection}{\numberline {4.2.2}Custom Tracker Implementation Snippet}{13}{subsection.4.2.2}%
-\contentsline {chapter}{\numberline {5}Experimental Results and Analysis}{14}{chapter.5}%
-\contentsline {section}{\numberline {5.1}Test Environment and Datasets}{14}{section.5.1}%
-\contentsline {section}{\numberline {5.2}Quantitative Comparison of Trackers}{14}{section.5.2}%
-\contentsline {section}{\numberline {5.3}Qualitative Analysis}{14}{section.5.3}%
-\contentsline {subsection}{\numberline {5.3.1}Tracking Stability and Scale Adaptation}{15}{subsection.5.3.1}%
-\contentsline {subsection}{\numberline {5.3.2}Occlusion Handling}{15}{subsection.5.3.2}%
-\contentsline {subsection}{\numberline {5.3.3}Multi-Object Tracking Performance}{16}{subsection.5.3.3}%
-\contentsline {chapter}{\numberline {6}Discussion}{18}{chapter.6}%
-\contentsline {section}{\numberline {6.1}Analysis of Results}{18}{section.6.1}%
-\contentsline {section}{\numberline {6.2}Limitations}{18}{section.6.2}%
-\contentsline {section}{\numberline {6.3}Future Work}{18}{section.6.3}%
-\contentsline {chapter}{\numberline {7}Conclusion}{20}{chapter.7}%
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Introduction}{4}{section.1}%
+\contentsline {section}{\numberline {2}Object Detection Algorithms}{4}{section.2}%
+\contentsline {section}{\numberline {3}Fundamentals of Correlation-Based Tracking}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}CSRT Algorithm}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}MOSSE Algorithm}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}KCF Algorithm (Kernelized Correlation Filters)}{6}{subsection.3.3}%
+\contentsline {section}{\numberline {4}System Implementation and Baseline Analysis}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Phase 1: Foundational Framework}{6}{subsection.4.1}%
+\contentsline {subsubsection}{\numberline {4.1.1}Configuration Parameters}{6}{subsubsection.4.1.1}%
+\contentsline {subsubsection}{\numberline {4.1.2}Helper Functions}{7}{subsubsection.4.1.2}%
+\contentsline {subsection}{\numberline {4.2}Initial Object Detection using YOLOv8}{8}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Core Tracking with OpenCV Library Trackers}{9}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Comparative Analysis of Baseline Trackers}{10}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Analysis of Detection Models (YOLOv8 vs. others)}{10}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Advanced Hybrid Tracking and Re-acquisition}{11}{subsection.4.6}%
+\contentsline {section}{\numberline {5}Proposed Custom Tracking Algorithm: KLT-KF}{14}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Class Initialization and State Representation}{14}{subsection.5.1}%
+\contentsline {subsubsection}{\numberline {5.1.1}Core Components}{14}{subsubsection.5.1.1}%
+\contentsline {subsubsection}{\numberline {5.1.2}Innovation: 8-Dimensional Kalman Filter for State Estimation}{15}{subsubsection.5.1.2}%
+\contentsline {subsection}{\numberline {5.2}Innovation: Adaptive Tracking Modes}{16}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Tracker Initialization and Feature Seeding}{17}{subsection.5.3}%
+\contentsline {subsubsection}{\numberline {5.3.1}Innovation: Multi-Region Hierarchical Feature Seeding}{17}{subsubsection.5.3.1}%
+\contentsline {subsection}{\numberline {5.4}The Tracking Update Cycle}{17}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Fulfilling Project Requirements}{19}{subsection.5.5}%
+\contentsline {section}{\numberline {6}System Orchestration and Advanced Logic}{20}{section.6}%
+\contentsline {subsection}{\numberline {6.1}System Architecture and Configuration}{20}{subsection.6.1}%
+\contentsline {subsubsection}{\numberline {6.1.1}Innovation: Object-Specific Presets}{20}{subsubsection.6.1.1}%
+\contentsline {subsubsection}{\numberline {6.1.2}Command-Line Interface}{20}{subsubsection.6.1.2}%
+\contentsline {subsection}{\numberline {6.2}Initial Target Acquisition}{21}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Innovation: Self-Correcting and Dual-Tracker Architecture}{21}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Innovation: Object Re-Identification for Re-entry}{21}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}Innovation: The Exit, Re-entry, and Verification Loop}{22}{subsection.6.5}%
+\contentsline {subsection}{\numberline {6.6}Interactive Controls and Usability}{23}{subsection.6.6}%
+\contentsline {section}{\numberline {7}Extension: Simultaneous Multi-Object Tracking}{23}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Architectural Design: The Tracker Manager}{24}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Workflow and Integration}{25}{subsection.7.2}%
+\contentsline {subsubsection}{\numberline {7.2.1}Initial Batch Detection}{25}{subsubsection.7.2.1}%
+\contentsline {subsubsection}{\numberline {7.2.2}Simplified Main Loop}{25}{subsubsection.7.2.2}%
+\contentsline {subsection}{\numberline {7.3}Analysis of Multi-Tracking Performance}{26}{subsection.7.3}%
+\contentsline {section}{\numberline {8}Experimental Results and Analysis}{26}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Experimental Setup}{27}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Performance Metrics}{27}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Comparative Analysis of Single-Object Trackers}{27}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Multi-Object Tracking Performance}{28}{subsection.8.4}%
+\contentsline {section}{\numberline {9}Conclusion}{28}{section.9}%
