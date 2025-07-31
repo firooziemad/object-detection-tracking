@@ -12,7 +12,7 @@
 \contentsline {subsection}{\numberline {4.2}Initial Object Detection using YOLOv8}{8}{subsection.4.2}%
 \contentsline {subsection}{\numberline {4.3}Core Tracking with OpenCV Library Trackers}{9}{subsection.4.3}%
 \contentsline {subsection}{\numberline {4.4}Comparative Analysis of Baseline Trackers}{10}{subsection.4.4}%
-\contentsline {subsection}{\numberline {4.5}Analysis of Detection Models (YOLOv8 vs. others)}{10}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.5}Analysis of Detection Models (YOLOv8 vs. others)}{11}{subsection.4.5}%
 \contentsline {subsection}{\numberline {4.6}Advanced Hybrid Tracking and Re-acquisition}{11}{subsection.4.6}%
 \contentsline {section}{\numberline {5}Proposed Custom Tracking Algorithm: KLT-KF}{14}{section.5}%
 \contentsline {subsection}{\numberline {5.1}Class Initialization and State Representation}{14}{subsection.5.1}%
@@ -21,26 +21,24 @@
 \contentsline {subsection}{\numberline {5.2}Innovation: Adaptive Tracking Modes}{16}{subsection.5.2}%
 \contentsline {subsection}{\numberline {5.3}Tracker Initialization and Feature Seeding}{17}{subsection.5.3}%
 \contentsline {subsubsection}{\numberline {5.3.1}Innovation: Multi-Region Hierarchical Feature Seeding}{17}{subsubsection.5.3.1}%
-\contentsline {subsection}{\numberline {5.4}The Tracking Update Cycle}{17}{subsection.5.4}%
-\contentsline {subsection}{\numberline {5.5}Fulfilling Project Requirements}{19}{subsection.5.5}%
+\contentsline {subsection}{\numberline {5.4}The Tracking Update Cycle}{18}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Project Requirements}{19}{subsection.5.5}%
 \contentsline {section}{\numberline {6}System Orchestration and Advanced Logic}{20}{section.6}%
 \contentsline {subsection}{\numberline {6.1}System Architecture and Configuration}{20}{subsection.6.1}%
 \contentsline {subsubsection}{\numberline {6.1.1}Innovation: Object-Specific Presets}{20}{subsubsection.6.1.1}%
-\contentsline {subsubsection}{\numberline {6.1.2}Command-Line Interface}{20}{subsubsection.6.1.2}%
+\contentsline {subsubsection}{\numberline {6.1.2}Command-Line Interface}{21}{subsubsection.6.1.2}%
 \contentsline {subsection}{\numberline {6.2}Initial Target Acquisition}{21}{subsection.6.2}%
 \contentsline {subsection}{\numberline {6.3}Innovation: Self-Correcting and Dual-Tracker Architecture}{21}{subsection.6.3}%
-\contentsline {subsection}{\numberline {6.4}Innovation: Object Re-Identification for Re-entry}{21}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.4}Innovation: Object Re-Identification for Re-entry}{22}{subsection.6.4}%
 \contentsline {subsection}{\numberline {6.5}Innovation: The Exit, Re-entry, and Verification Loop}{22}{subsection.6.5}%
-\contentsline {subsection}{\numberline {6.6}Interactive Controls and Usability}{23}{subsection.6.6}%
-\contentsline {section}{\numberline {7}Extension: Simultaneous Multi-Object Tracking}{23}{section.7}%
+\contentsline {section}{\numberline {7}Extension: Simultaneous Multi-Object Tracking}{24}{section.7}%
 \contentsline {subsection}{\numberline {7.1}Architectural Design: The Tracker Manager}{24}{subsection.7.1}%
 \contentsline {subsection}{\numberline {7.2}Workflow and Integration}{25}{subsection.7.2}%
 \contentsline {subsubsection}{\numberline {7.2.1}Initial Batch Detection}{25}{subsubsection.7.2.1}%
-\contentsline {subsubsection}{\numberline {7.2.2}Simplified Main Loop}{25}{subsubsection.7.2.2}%
+\contentsline {subsubsection}{\numberline {7.2.2}Simplified Main Loop}{26}{subsubsection.7.2.2}%
 \contentsline {subsection}{\numberline {7.3}Analysis of Multi-Tracking Performance}{26}{subsection.7.3}%
-\contentsline {section}{\numberline {8}Experimental Results and Analysis}{26}{section.8}%
-\contentsline {subsection}{\numberline {8.1}Experimental Setup}{27}{subsection.8.1}%
-\contentsline {subsection}{\numberline {8.2}Performance Metrics}{27}{subsection.8.2}%
-\contentsline {subsection}{\numberline {8.3}Comparative Analysis of Single-Object Trackers}{27}{subsection.8.3}%
-\contentsline {subsection}{\numberline {8.4}Multi-Object Tracking Performance}{28}{subsection.8.4}%
+\contentsline {section}{\numberline {8}Experimental Results and Analysis}{27}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Performance Metrics}{27}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Comparative Analysis of Single-Object Trackers}{27}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Multi-Object Tracking Performance}{28}{subsection.8.3}%
 \contentsline {section}{\numberline {9}Conclusion}{28}{section.9}%

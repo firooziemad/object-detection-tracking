@@ -23,6 +23,7 @@
 
 % For professional tables
 \usepackage{booktabs}
+\usepackage{tabularx}
 
 % For better figure and table placement
 \usepackage{float}
@@ -365,21 +366,26 @@ A key requirement of this project is to compare the performance of the three bas
 The performance of these trackers was measured on the test video. The results are summarized in Table \ref{tab:tracker_comparison}.
 
 \begin{table}[H]
-\centering
-\caption{Comparison of Baseline Tracking Algorithms}
-\label{tab:tracker_comparison}
-\begin{tabular}{@{}llll@{}}
-\toprule
-\textbf{Tracker} & \textbf{Avg. FPS (Your Data)} & \textbf{Accuracy \& Robustness} & \textbf{Best Use Case} \\ \midrule
-\textbf{MOSSE} & \texttt{[Enter your FPS]} & Low & High-speed tracking, stable conditions. \\
-\textbf{KCF} & \texttt{[Enter your FPS]} & Medium & Real-time general-purpose tracking. \\
-\textbf{CSRT} & \texttt{[Enter your FPS]} & High & High-accuracy tracking, complex scenes. \\ \bottomrule
-\end{tabular}
+    \centering
+    \caption{Comparison of Baseline Tracking Algorithms}
+    \label{tab:tracker_comparison}
+    % Use tabularx and set its total width to the text width
+    \begin{tabularx}{\textwidth}{@{}llXX@{}} % <--- MODIFIED LINE
+        \toprule
+        \textbf{Tracker} & \textbf{Avg. FPS} & \textbf{Accuracy \& Robustness} & \textbf{Best Use Case} \\
+        \midrule
+        \textbf{MOSSE} & \texttt{650} & Low & High-speed tracking, stable conditions. \\
+        \addlinespace % Adds a little vertical space between rows
+        \textbf{KCF} & \texttt{90} & Medium & Real-time general-purpose tracking. \\
+        \addlinespace
+        \textbf{CSRT} & \texttt{16} & High & High-accuracy tracking, complex scenes. \\
+        \bottomrule
+    \end{tabularx}
 \end{table}
 
 \subsection{Analysis of Detection Models (YOLOv8 vs. others)}
 % This section is also text and remains the same.
-The choice of the initial detector is crucial. This project uses YOLOv8, a state-of-the-art model from Ultralytics. \textbf{YOLOv8} is a single-stage detector known for its exceptional balance of speed and accuracy. It is important to clarify that while \textbf{YOLOv11} was mentioned, as of mid-2025, there is no official model released under this name in the mainstream YOLO lineage. The choice of `yolov8n.pt` is therefore a sound and contemporary one for this project's requirements, being the fastest variant available. A comparison between different YOLOv8 variants is shown in Table \ref{tab:yolo_comparison}.
+The choice of the initial detector is crucial. This project uses YOLOv8, a state-of-the-art model from Ultralytics. \textbf{YOLOv8} is a single-stage detector known for its exceptional balance of speed and accuracy. The choice of `yolov8n.pt` is therefore a sound and contemporary one for this project's requirements, being the fastest variant available. A comparison between different YOLOv8 variants is shown in Table \ref{tab:yolo_comparison}.
 
 \begin{table}[H]
 \centering
@@ -725,13 +731,13 @@ ok = (self.lost_count <= self.max_lost)
 return ok, self.box
 \end{lstlisting}
 
-\subsection{Fulfilling Project Requirements}
+\subsection{Project Requirements}
 This custom KLT-KF tracker successfully addresses the advanced requirements of the project:
 \begin{itemize}
-    \item \textbf{Innovation (25 points):} The combination of multi-region feature seeding, adaptive tracking modes, robust outlier rejection, percentile-based box estimation, and an 8D Kalman filter constitutes a highly innovative and creative approach to the tracking problem.
-    \item \textbf{Adaptive Size (10 points):} The algorithm explicitly models and predicts width/height in the Kalman filter and uses a sophisticated, smoothed estimation from the feature cloud, allowing the bounding box to dynamically shrink and grow with the object's distance from the camera.
-    \item \textbf{Tracking Continuity (10 points):} The Kalman filter's predictive capability, combined with the \texttt{lost\_count} mechanism, allows the tracker to coast through short-term occlusions and maintain a stable track where simpler trackers would fail.
-    \item \textbf{Processing Speed (10 points):} By using the highly optimized OpenCV implementations of KLT and relying on a small number of feature points (typically < 150) rather than dense correlation maps, the algorithm achieves very high FPS, easily surpassing 80\% of the speed of the much heavier CSRT tracker.
+    \item \textbf{Innovation:} The combination of multi-region feature seeding, adaptive tracking modes, robust outlier rejection, percentile-based box estimation, and an 8D Kalman filter constitutes a highly innovative and creative approach to the tracking problem.
+    \item \textbf{Adaptive Size:} The algorithm explicitly models and predicts width/height in the Kalman filter and uses a sophisticated, smoothed estimation from the feature cloud, allowing the bounding box to dynamically shrink and grow with the object's distance from the camera.
+    \item \textbf{Tracking Continuity:} The Kalman filter's predictive capability, combined with the \texttt{lost\_count} mechanism, allows the tracker to coast through short-term occlusions and maintain a stable track where simpler trackers would fail.
+    \item \textbf{Processing Speed:} By using the highly optimized OpenCV implementations of KLT and relying on a small number of feature points (typically < 150) rather than dense correlation maps, the algorithm achieves very high FPS.
 \end{itemize}
 
 \section{System Orchestration and Advanced Logic}
@@ -852,7 +858,6 @@ elif pend_ver:
         in_marg = True # Go back to searching
 \end{lstlisting}
 
-\subsection{Interactive Controls and Usability}
 Finally, the system incorporates a rich set of keyboard controls that allow for real-time interaction. The user can pause the video, manually trigger re-detection to correct drift (\texttt{'r'}), perform a hard reset to a new object (\texttt{'d'}), and dynamically switch the custom tracker's performance mode (\texttt{'s'}/\texttt{'n'}/\texttt{'h'}). This level of control makes the system not only a powerful tracker but also a valuable tool for analysis and debugging.
 
 \section{Extension: Simultaneous Multi-Object Tracking}
@@ -985,19 +990,6 @@ In summary, the multi-object tracking system successfully extends the capabiliti
 \section{Experimental Results and Analysis}
 This section presents a comprehensive evaluation of the developed tracking systems. The primary goals are to benchmark the performance of the custom KLT-KF tracker against standard library algorithms and to assess the capabilities of the final multi-object tracking implementation.
 
-\subsection{Experimental Setup}
-All tests were conducted on a consistent hardware and software platform to ensure fair comparisons.
-\begin{itemize}
-    \item \textbf{Hardware:} Intel Core i7-10750H CPU @ 2.60GHz, 16 GB RAM, NVIDIA GeForce RTX 2060 GPU.
-    \item \textbf{Software:} Python 3.9, OpenCV 4.8, PyTorch 2.0, Ultralytics YOLOv8.
-    \item \textbf{Dataset:} A set of three representative video clips were used for testing:
-    \begin{enumerate}
-        \item \texttt{input1.mp4}: A street view video with multiple cars moving at various speeds and distances.
-        \item \texttt{people.mp4}: A clip showing several pedestrians walking, with frequent partial occlusions.
-        \item \lstinline!dog_run.mp4!: A video of a single dog running erratically, used to test performance under high, unpredictable motion.
-    \end{enumerate}
-\end{itemize}
-
 \subsection{Performance Metrics}
 The trackers were evaluated based on two primary criteria:
 \begin{enumerate}
@@ -1015,34 +1007,31 @@ The trackers were evaluated based on two primary criteria:
 The three baseline OpenCV trackers (MOSSE, KCF, CSRT) and our custom KLT-KF tracker were run on the test videos. The results are summarized in Table \ref{tab:final_comparison}. For the KLT-KF tracker, the appropriate tracking mode was selected based on the target object's dynamics.
 
 \begin{table}[H]
-\centering
-\caption{Performance Comparison of Single-Object Tracking Algorithms}
-\label{tab:final_comparison}
-\begin{tabular}{@{}lll@{}}
-\toprule
-\textbf{Algorithm} & \textbf{Average FPS} & \textbf{Qualitative Accuracy \& Robustness} \\ \midrule
-\textbf{MOSSE} & \textasciitilde{}250 FPS & \textbf{Low.} Extremely fast but highly unstable. Fails immediately \\
-& & with any significant scale change or occlusion. Suffers from \\
-& & severe drift. Only suitable for ideal, high-speed conditions. \\ \addlinespace
-\textbf{KCF} & \textasciitilde{}140 FPS & \textbf{Medium.} A good balance of speed and accuracy. Handles \\
-& & minor appearance changes well. It is susceptible to drift \\
-& & during long-term tracking and can fail during heavy occlusion. \\ \addlinespace
-\textbf{CSRT} & \textasciitilde{}35 FPS & \textbf{High.} Very accurate and robust. Excellent handling of \\
-& & occlusions and object deformation due to its spatial reliability \\
-& & map. Its major drawback is the very low processing speed. \\ \addlinespace
-\textbf{KLT-KF (Ours)} & \textasciitilde{}95 FPS & \textbf{High.} Demonstrates robustness comparable to CSRT but at \\
-& & nearly 3x the speed. The Kalman filter provides smooth, \\
-& & jitter-free tracking. Adaptive size estimation works well. \\
-& & The exit/re-entry logic successfully handles full occlusions. \\ \bottomrule
-\end{tabular}
+    \centering
+    \caption{Performance Comparison of Single-Object Tracking Algorithms}
+    \label{tab:final_comparison}
+    % Use tabularx with the last column set to type X for text wrapping
+    \begin{tabularx}{\textwidth}{@{}llX@{}}
+        \toprule
+        \textbf{Algorithm} & \textbf{Average FPS} & \textbf{Qualitative Accuracy \& Robustness} \\
+        \midrule
+        \textbf{MOSSE} & {}650 FPS & \textbf{Low.} Extremely fast but highly unstable. Fails immediately with any significant scale change or occlusion. Suffers from severe drift. Only suitable for ideal, high-speed conditions. \\
+        \addlinespace
+        \textbf{KCF} & {}90 FPS & \textbf{Medium.} A good balance of speed and accuracy. Handles minor appearance changes well. It is susceptible to drift during long-term tracking and can fail during heavy occlusion. \\
+        \addlinespace
+        \textbf{CSRT} & {}16 FPS & \textbf{High.} Very accurate and robust. Excellent handling of occlusions and object deformation due to its spatial reliability map. Its major drawback is the very low processing speed. \\
+        \addlinespace
+        \textbf{KLT-KF (Ours)} & {}36 FPS & \textbf{High.} Demonstrates robustness comparable to CSRT but at nearly 2.5x the speed. The Kalman filter provides smooth, jitter-free tracking. Adaptive size estimation works well. The exit/re-entry logic successfully handles full occlusions. \\
+        \bottomrule
+    \end{tabularx}
 \end{table}
 
-The results clearly indicate that our proposed \textbf{KLT-KF tracker successfully achieves the project's primary goal}. It occupies a "sweet spot" in the performance landscape, delivering the high-level robustness and advanced features (occlusion handling, scale adaptation) of a complex tracker like CSRT, while maintaining a processing speed that is far more suitable for real-time applications and significantly faster than the 80\% CSRT speed requirement.
+The results indicate that our proposed \textbf{KLT-KF tracker successfully achieves the project's primary goal}. It occupies a "sweet spot" in the performance landscape, delivering the high-level robustness and advanced features (occlusion handling, scale adaptation) of a complex tracker like CSRT, while maintaining a processing speed that is far more suitable for real-time applications and significantly faster than the 80\% CSRT speed requirement.
 
 \subsection{Multi-Object Tracking Performance}
-The final system, which uses the manager class to run multiple KLT-KF instances, was tested on the \texttt{input1.mp4} video by tracking all visible cars. As predicted by the architecture, the performance scales linearly with the number of tracked objects.
+As predicted by the architecture, the performance scales linearly with the number of tracked objects.
 
-The system's FPS is inversely proportional to the number of active trackers. The visualization in the final output video demonstrates the system's ability to assign and maintain unique, persistent IDs for each object, even as they move and occlude one another. The use of the \lstinline!high_motion! preset for the \lstinline!car! class proved effective in keeping the individual tracks stable. The linear scaling means that the system's capacity is determined by the target FPS; on the test hardware, it could comfortably track 3-4 cars while maintaining over 30 FPS, making it viable for real-time use cases. The total processing time per frame can be modeled as $T_{\text{total}} \approx T_{\text{overhead}} + N \times T_{\text{single\_tracker}}$.
+The system's FPS is inversely proportional to the number of active trackers. The visualization in the final output video demonstrates the system's ability to assign and maintain unique, persistent IDs for each object, even as they move and occlude one another. The total processing time per frame can be modeled as $T_{\text{total}} \approx T_{\text{overhead}} + N \times T_{\text{single\_tracker}}$.
 
 \section{Conclusion}
 This project successfully designed, implemented, and evaluated a comprehensive object tracking system. The journey began with an analysis of foundational detection and tracking algorithms, establishing a baseline with standard libraries like OpenCV and YOLO.
@@ -1052,31 +1041,6 @@ The core contribution was the development of a novel \textbf{KLT-KF tracker}, wh
 Furthermore, the system was extended with an advanced orchestration layer that introduced a robust exit/re-entry logic for handling full occlusions and a self-correction mechanism to prevent long-term drift. Finally, a scalable manager class was implemented to extend the system's capabilities to track multiple objects simultaneously with high efficiency.
 
 Evaluation results confirm that the custom solution is significantly more robust than high-speed trackers like KCF and significantly faster than high-accuracy trackers like CSRT. All project goals, from initial detection to adaptive, continuous multi-object tracking, were successfully met, resulting in a powerful and practical computer vision application.
-
-% Optional: Add a bibliography for a more complete report
-\begin{thebibliography}{9}
-
-\bibitem{bolme2010mosse}
-David S. Bolme, J. Ross Beveridge, Bruce A. Draper, and Yui Man Lui.
-\newblock Visual object tracking using adaptive correlation filters.
-\newblock In \emph{2010 IEEE Computer Society Conference on Computer Vision and Pattern Recognition}, pages 2544--2550. IEEE, 2010.
-
-\bibitem{henriques2014kcf}
-Joao F. Henriques, Rui Caseiro, Pedro Martins, and Jorge Batista.
-\newblock High-speed tracking with kernelized correlation filters.
-\newblock In \emph{IEEE Transactions on Pattern Analysis and Machine Intelligence}, 37(3):583--596, 2014.
-
-\bibitem{lukezic2017csrt}
-Alan Lukezic, Tomas Vojir, Luka Cehovin, Jiri Matas, and Matej Kristan.
-\newblock Discriminative correlation filter with channel and spatial reliability.
-\newblock In \emph{Proceedings of the IEEE conference on computer vision and pattern recognition}, pages 6309--6318, 2017.
- 
-\bibitem{yolov8}
-Ultralytics.
-\newblock YOLOv8.
-\newblock \url{https://github.com/ultralytics/ultralytics}, 2023.
-
-\end{thebibliography}
 %==================================================================================
 
 

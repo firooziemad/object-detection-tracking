@@ -5,10 +5,10 @@ from ultralytics import YOLO
 A = False
 B = False
 
-C = "person1.mp4"
+C = "person2.mp4"
 D = "person"
 E = "yolov8n.pt"
-F = "CSRT"
+F = "KCF"
 
 G = 45
 H = 15
