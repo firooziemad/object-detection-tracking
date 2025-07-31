@@ -1,20 +1,18 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from CustomTracker import CustomTracker  # Assuming CustomTracker is in a separate file
+from custom_tracker import Tracker
 import sys
 import time
 import argparse
 
-# --- MANUAL CONFIGURATION ---
-VIDEO_PATH = "output.mp4"
-TARGET_CLASS_NAME = "person"
-MODEL_NAME = "yolov8n.pt"
-YOLO_CONFIDENCE_THRESHOLD = 0.4 # Confidence for initial detection
-MIN_AREA_INITIAL = 50 # Minimum pixel area to consider an object for tracking
+VIDEO = "input1.mp4"
+OBJ = "car"
+MODEL = "yolov8n.pt"
+CONF = 0.4
+MIN_AREA = 50
 
-# YOLO class mapping
-YOLO_CLASSES = {
+CLASSES = {
     "person": 0, "bicycle": 1, "car": 2, "motorcycle": 3, "airplane": 4,
     "bus": 5, "train": 6, "truck": 7, "boat": 8, "traffic light": 9,
     "fire hydrant": 10, "stop sign": 11, "parking meter": 12, "bench": 13,
@@ -34,110 +32,93 @@ YOLO_CLASSES = {
     "toothbrush": 79
 }
 
-class MultiObjectTracker:
-    """A class to manage tracking multiple objects simultaneously."""
-    def __init__(self, tracking_mode='normal'):
+class Tracker:
+    def __init__(self, mode='normal'):
         self.trackers = {}
-        self.next_tracker_id = 0
-        self.tracking_mode = tracking_mode
+        self.next_id = 0
+        self.mode = mode
         self.colors = {}
 
-    def get_color_for_id(self, tracker_id):
-        """Generate a consistent, random color for a given tracker ID."""
-        if tracker_id not in self.colors:
-            np.random.seed(tracker_id)
-            self.colors[tracker_id] = (np.random.randint(50, 255), 
-                                       np.random.randint(50, 255), 
-                                       np.random.randint(50, 255))
-        return self.colors[tracker_id]
+    def color(self, id):
+        if id not in self.colors:
+            np.random.seed(id)
+            self.colors[id] = (np.random.randint(50, 255), 
+                               np.random.randint(50, 255), 
+                               np.random.randint(50, 255))
+        return self.colors[id]
 
-    def initialize_trackers(self, frame, initial_bboxes):
-        """Initializes a new tracker for each bounding box."""
-        for bbox in initial_bboxes:
-            tracker = CustomTracker()
-            tracker.set_tracking_mode(self.tracking_mode)
-            
-            if tracker.init(frame, bbox):
-                self.trackers[self.next_tracker_id] = tracker
-                print(f"Initialized tracker ID: {self.next_tracker_id} at {bbox}")
-                self.next_tracker_id += 1
-        
+    def init_all(self, frame, bboxes):
+        for box in bboxes:
+            t = CustomTracker()
+            t.set_tracking_mode(self.mode)
+            if t.init(frame, box):
+                self.trackers[self.next_id] = t
+                print(f"Initialized tracker ID: {self.next_id} at {box}")
+                self.next_id += 1
         print(f"\nSuccessfully initialized {len(self.trackers)} trackers.")
 
-    def update_all(self, frame):
-        """Update all active trackers with the new frame."""
-        updated_bboxes = {}
-        lost_trackers = []
-        
-        for tracker_id, tracker in self.trackers.items():
-            success, box = tracker.update(frame)
-            if success:
-                updated_bboxes[tracker_id] = box
+    def update(self, frame):
+        boxes = {}
+        lost = []
+        for id, t in self.trackers.items():
+            ok, box = t.update(frame)
+            if ok:
+                boxes[id] = box
             else:
-                lost_trackers.append(tracker_id)
-        
-        # Remove trackers that have been lost for too long
-        for tracker_id in lost_trackers:
-            print(f"Tracker {tracker_id} lost.")
-            del self.trackers[tracker_id]
-            
-        return updated_bboxes
+                lost.append(id)
+        for id in lost:
+            print(f"Tracker {id} lost.")
+            del self.trackers[id]
+        return boxes
 
-    def draw_all_tracks(self, frame):
-        """Draw bounding boxes and IDs for all tracked objects."""
-        for tracker_id, tracker in self.trackers.items():
-            if tracker.bbox is not None:
-                x, y, w, h = tracker.bbox
-                color = self.get_color_for_id(tracker_id)
+    def draw(self, frame):
+        for id, t in self.trackers.items():
+            if t.bbox is not None:
+                x, y, w, h = t.bbox
+                color = self.color(id)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
-                label = f"ID: {tracker_id}"
+                label = f"ID: {id}"
                 cv2.putText(frame, label, (x, y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         return frame
 
-def get_all_detections(boxes, min_area, target_class_id):
-    """Get all valid detections from YOLO results that meet criteria."""
-    valid_detections = []
+def detections(boxes, min_area, class_id):
+    out = []
     for box in boxes:
         xyxy = box.xyxy[0].cpu().numpy()
-        class_id = int(box.cls[0].cpu().numpy())
-        
-        if class_id == target_class_id:
-            width = xyxy[2] - xyxy[0]
-            height = xyxy[3] - xyxy[1]
-            area = width * height
-            
+        cid = int(box.cls[0].cpu().numpy())
+        if cid == class_id:
+            w = xyxy[2] - xyxy[0]
+            h = xyxy[3] - xyxy[1]
+            area = w * h
             if area > min_area:
-                bbox = (int(xyxy[0]), int(xyxy[1]), int(width), int(height))
-                valid_detections.append(bbox)
-                
-    return valid_detections
+                bbox = (int(xyxy[0]), int(xyxy[1]), int(w), int(h))
+                out.append(bbox)
+    return out
 
 def main():
-    # --- CONFIGURATION ---
     parser = argparse.ArgumentParser(description='Multi-Object Tracking using YOLO and CustomTracker')
-    parser.add_argument('--object', '-o', type=str, default=TARGET_CLASS_NAME, help='Object to track')
-    parser.add_argument('--video', '-v', type=str, default=VIDEO_PATH, help='Path to video file')
-    parser.add_argument('--confidence', '-c', type=float, default=YOLO_CONFIDENCE_THRESHOLD, help='YOLO confidence threshold')
+    parser.add_argument('--object', '-o', type=str, default=OBJ, help='Object to track')
+    parser.add_argument('--video', '-v', type=str, default=VIDEO, help='Path to video file')
+    parser.add_argument('--confidence', '-c', type=float, default=CONF, help='YOLO confidence threshold')
     parser.add_argument('--mode', '-m', type=str, default='high_motion', choices=['smooth', 'normal', 'high_motion'], help='Tracking mode')
     args = parser.parse_args()
 
-    target_class_name = args.object
-    if target_class_name not in YOLO_CLASSES:
-        print(f"Error: Object '{target_class_name}' not in YOLO_CLASSES.")
+    obj = args.object
+    if obj not in CLASSES:
+        print(f"Error: Object '{obj}' not in CLASSES.")
         return
-    target_class_id = YOLO_CLASSES[target_class_name]
+    cid = CLASSES[obj]
 
     print("Configuration:")
     print(f"  - Video: {args.video}")
-    print(f"  - Target: {target_class_name} (ID: {target_class_id})")
+    print(f"  - Target: {obj} (ID: {cid})")
     print(f"  - Confidence: {args.confidence}")
     print(f"  - Tracking Mode: {args.mode}")
-    print(f"  - Min Initial Area: {MIN_AREA_INITIAL}")
+    print(f"  - Min Initial Area: {MIN_AREA}")
 
-    # --- INITIALIZATION ---
     print("\nLoading YOLO model...")
-    model = YOLO(MODEL_NAME)
+    model = YOLO(MODEL)
     model.overrides['verbose'] = False
 
     cap = cv2.VideoCapture(args.video)
@@ -145,75 +126,57 @@ def main():
         print(f"Error opening video {args.video}")
         return
 
-    success, frame = cap.read()
-    if not success:
+    ok, frame = cap.read()
+    if not ok:
         print("Error reading the first frame.")
         cap.release()
         return
 
-    # --- INITIAL DETECTION ---
-    print(f"\nDetecting all '{target_class_name}' objects in the first frame...")
-    results = model(frame, verbose=False, classes=[target_class_id], conf=args.confidence)
-    
-    initial_bboxes = get_all_detections(results[0].boxes, MIN_AREA_INITIAL, target_class_id)
-    
-    if not initial_bboxes:
-        print(f"Could not find any '{target_class_name}' objects meeting the criteria in the first frame.")
+    print(f"\nDetecting all '{obj}' objects in the first frame...")
+    results = model(frame, verbose=False, classes=[cid], conf=args.confidence)
+    bboxes = detections(results[0].boxes, MIN_AREA, cid)
+    if not bboxes:
+        print(f"Could not find any '{obj}' objects meeting the criteria in the first frame.")
         print("Try lowering the --confidence or checking the video content.")
         cap.release()
         return
-        
-    print(f"Found {len(initial_bboxes)} initial objects to track.")
-    
-    # --- INITIALIZE MULTI-TRACKER ---
-    multi_tracker = MultiObjectTracker(tracking_mode=args.mode)
-    multi_tracker.initialize_trackers(frame, initial_bboxes)
+    print(f"Found {len(bboxes)} initial objects to track.")
 
-    # --- TRACKING LOOP ---
-    frame_count = 0
+    tracker = Tracker(mode=args.mode)
+    tracker.init_all(frame, bboxes)
+
+    count = 0
     paused = False
-    
+
     while True:
         if not paused:
-            success, frame = cap.read()
-            if not success:
+            ok, frame = cap.read()
+            if not ok:
                 print("\nEnd of video.")
                 break
-            frame_count += 1
-        
-        # Update all trackers
+            count += 1
         if not paused:
-            multi_tracker.update_all(frame)
-
-        # --- VISUALIZATION ---
-        display_frame = frame.copy()
-        display_frame = multi_tracker.draw_all_tracks(display_frame)
-        
-        # Information overlay
-        info_text = f"Frame: {frame_count} | Tracking {len(multi_tracker.trackers)} Objects | Mode: {args.mode.upper()}"
-        cv2.putText(display_frame, info_text, (10, 30), 
+            tracker.update(frame)
+        show = frame.copy()
+        show = tracker.draw(show)
+        info = f"Frame: {count} | Tracking {len(tracker.trackers)} Objects | Mode: {args.mode.upper()}"
+        cv2.putText(show, info, (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-
         if paused:
-            cv2.putText(display_frame, "PAUSED", (10, display_frame.shape[0] - 30),
+            cv2.putText(show, "PAUSED", (10, show.shape[0] - 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-
-        cv2.imshow(f"Multi-Object Tracking - {target_class_name}", display_frame)
-
-        # --- CONTROLS ---
+        cv2.imshow(f"Multi-Object Tracking - {obj}", show)
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
         elif key == ord('p'):
             paused = not paused
-        elif key == ord(' ') and paused: # Step frame-by-frame when paused
-            success, frame = cap.read()
-            if not success:
+        elif key == ord(' ') and paused:
+            ok, frame = cap.read()
+            if not ok:
                 break
-            frame_count += 1
-            multi_tracker.update_all(frame)
-
-    # --- CLEANUP ---
+            count += 1
+            tracker.update(frame)
     cap.release()
     cv2.destroyAllWindows()
 

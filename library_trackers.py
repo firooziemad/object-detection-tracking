@@ -2,38 +2,38 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-HYBRID = False
-REID = False
+A = False
+B = False
 
-VID = "person1.mp4"
-CLS = "person"
-MODEL = "yolov8n.pt"
-TRK = "CSRT"
+C = "person1.mp4"
+D = "person"
+E = "yolov8n.pt"
+F = "CSRT"
 
-HEALTH_INT = 45
-REDET_INT = 15
-SCALE_SMOOTH = 0.2
-YOLO_CONF = 0.5
-IOU_TH = 0.3
-REID_TH = 0.45
-FEAT_RATE = 0.05
+G = 45
+H = 15
+I = 0.2
+J = 0.5
+K = 0.3
+L = 0.45
+M = 0.05
 
-def make_trk(t):
-    if t == 'CSRT': trk = cv2.TrackerCSRT_create()
-    elif t == 'KCF': trk = cv2.TrackerKCF_create()
-    elif t == 'MOSSE': trk = cv2.legacy.TrackerMOSSE_create()
+def N(t):
+    if t == 'CSRT': o = cv2.TrackerCSRT_create()
+    elif t == 'KCF': o = cv2.TrackerKCF_create()
+    elif t == 'MOSSE': o = cv2.legacy.TrackerMOSSE_create()
     else: raise ValueError("Invalid tracker type specified.")
-    return trk
+    return o
 
-def iou(a, b):
-    xa, ya = max(a[0], b[0]), max(a[1], b[1])
-    xb, yb = min(a[0]+a[2], b[0]+b[2]), min(a[1]+a[3], b[1]+b[3])
-    inter = max(0, xb-xa) * max(0, yb-ya)
-    area_a, area_b = a[2]*a[3], b[2]*b[3]
-    union = float(area_a + area_b - inter)
-    return inter/union if union > 0 else 0
+def O(a, b):
+    p, q = max(a[0], b[0]), max(a[1], b[1])
+    r, s = min(a[0]+a[2], b[0]+b[2]), min(a[1]+a[3], b[1]+b[3])
+    t = max(0, r-p) * max(0, s-q)
+    u, v = a[2]*a[3], b[2]*b[3]
+    w = float(u + v - t)
+    return t/w if w > 0 else 0
 
-def get_hist(img, box):
+def P(img, box):
     x, y, w, h = int(box[0]), int(box[1]), int(box[2]), int(box[3])
     if w <= 0 or h <= 0: return None
     roi = img[y:y+h, x:x+w]
@@ -43,142 +43,142 @@ def get_hist(img, box):
     return hist
 
 def main():
-    mdl = YOLO(MODEL)
-    cap = cv2.VideoCapture(VID)
-    if not cap.isOpened(): print(f"Error opening video {VID}"); return
-    ok, frm = cap.read()
+    a = YOLO(E)
+    b = cv2.VideoCapture(C)
+    if not b.isOpened(): print(f"Error opening video {C}"); return
+    ok, c = b.read()
     if not ok: print("Error reading first frame."); return
 
-    cls_id = list(mdl.names.keys())[list(mdl.names.values()).index(CLS.lower())]
-    res = mdl(frm, verbose=False, classes=[cls_id])
+    d = list(a.names.keys())[list(a.names.values()).index(D.lower())]
+    e = a(c, verbose=False, classes=[d])
 
-    box0, feat0 = None, None
-    if len(res[0].boxes) > 0:
-        xyxy = res[0].boxes[0].xyxy[0].cpu().numpy()
-        box0 = tuple(map(int, [xyxy[0], xyxy[1], xyxy[2]-xyxy[0], xyxy[3]-xyxy[1]]))
-        if REID:
-            feat0 = get_hist(frm, box0)
-            if feat0 is None: print("Initial object has invalid size."); return
-            print(f"Found '{CLS}' and extracted its feature signature.")
+    f, g = None, None
+    if len(e[0].boxes) > 0:
+        h = e[0].boxes[0].xyxy[0].cpu().numpy()
+        f = tuple(map(int, [h[0], h[1], h[2]-h[0], h[3]-h[1]]))
+        if B:
+            g = P(c, f)
+            if g is None: print("Initial object has invalid size."); return
+            print(f"Found '{D}' and extracted its feature signature.")
 
-    if not box0: print("Target not found in first frame."); return
+    if not f: print("Target not found in first frame."); return
 
-    trk = make_trk(TRK)
-    trk.init(frm, box0)
+    i = N(F)
+    i.init(c, f)
 
-    if HYBRID:
-        run_hybrid(cap, trk, mdl, box0, feat0)
+    if A:
+        Q(b, i, a, f, g)
     else:
-        run_track(cap, trk)
+        R(b, i)
 
-    cap.release()
+    b.release()
     cv2.destroyAllWindows()
 
-def run_track(cap, trk):
-    fps_sum = 0
-    cnt = 0
+def R(b, i):
+    j = 0
+    k = 0
 
     while True:
-        ok, frm = cap.read()
+        ok, c = b.read()
         if not ok: break
-        t0 = cv2.getTickCount()
-        ok_trk, box = trk.update(frm)
+        l = cv2.getTickCount()
+        ok_trk, box = i.update(c)
         if ok_trk:
-            p1, p2 = (int(box[0]), int(box[1])), (int(box[0]+box[2]), int(box[1]+box[3]))
-            cv2.rectangle(frm, p1, p2, (0,255,0), 2)
+            m, n = (int(box[0]), int(box[1])), (int(box[0]+box[2]), int(box[1]+box[3]))
+            cv2.rectangle(c, m, n, (0,255,0), 2)
 
-        fps = cv2.getTickFrequency() / (cv2.getTickCount() - t0)
-        fps_sum += fps
-        cnt += 1
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - l)
+        j += fps
+        k += 1
 
-        cv2.putText(frm, f"FPS: {int(fps)} ({TRK})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
-        cv2.imshow("Pure Tracking Mode", frm)
+        cv2.putText(c, f"FPS: {int(fps)} ({F})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+        cv2.imshow("Pure Tracking Mode", c)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
-    if cnt > 0:
-        avg_fps = fps_sum / cnt
+    if k > 0:
+        avg_fps = j / k
         print(f"\nPure Tracking Mode finished. Average FPS: {avg_fps:.2f}")
 
-def run_hybrid(cap, trk, mdl, box0, feat0):
-    active, lost, cnt, fps_sum = True, 0, 0, 0
-    sz, sz_tgt = (box0[2], box0[3]), (box0[2], box0[3])
-    cls_id = list(mdl.names.keys())[list(mdl.names.values()).index(CLS.lower())]
+def Q(b, i, a, f, g):
+    o, p, q, r = True, 0, 0, 0
+    s, t = (f[2], f[3]), (f[2], f[3])
+    u = list(a.names.keys())[list(a.names.values()).index(D.lower())]
 
     while True:
-        ok, frm = cap.read()
+        ok, c = b.read()
         if not ok: break
-        cnt += 1
-        t0 = cv2.getTickCount()
-        box_draw = None
+        q += 1
+        v = cv2.getTickCount()
+        w = None
 
-        if active:
-            ok_trk, box = trk.update(frm)
-            healthy = True
-            if ok_trk and cnt % HEALTH_INT == 0:
-                det = mdl(frm, verbose=False, imgsz=320, conf=YOLO_CONF, classes=[cls_id])
+        if o:
+            ok_trk, box = i.update(c)
+            x = True
+            if ok_trk and q % G == 0:
+                det = a(c, verbose=False, imgsz=320, conf=J, classes=[u])
                 if len(det[0].boxes) > 0:
                     dbox = tuple(map(int, det[0].boxes[0].xyxy[0].cpu().numpy()))
                     dbox = (dbox[0], dbox[1], dbox[2]-dbox[0], dbox[3]-dbox[1])
-                    if iou(box, dbox) < IOU_TH: healthy = False
+                    if O(box, dbox) < K: x = False
                     else:
-                        sz_tgt = (dbox[2], dbox[3])
-                        if REID:
-                            feat_now = get_hist(frm, dbox)
+                        t = (dbox[2], dbox[3])
+                        if B:
+                            feat_now = P(c, dbox)
                             if feat_now is not None:
-                                cv2.addWeighted(feat_now, FEAT_RATE, feat0, 1-FEAT_RATE, 0, feat0)
-                else: healthy = False
-            if ok_trk and healthy:
-                w, h = int(sz[0]*(1-SCALE_SMOOTH)+sz_tgt[0]*SCALE_SMOOTH), int(sz[1]*(1-SCALE_SMOOTH)+sz_tgt[1]*SCALE_SMOOTH)
-                sz = (w, h)
+                                cv2.addWeighted(feat_now, M, g, 1-M, 0, g)
+                else: x = False
+            if ok_trk and x:
+                w_, h_ = int(s[0]*(1-I)+t[0]*I), int(s[1]*(1-I)+t[1]*I)
+                s = (w_, h_)
                 cx, cy = int(box[0]+box[2]/2), int(box[1]+box[3]/2)
-                box_draw = (cx-w//2, cy-h//2, w, h)
+                w = (cx-w_//2, cy-h_//2, w_, h_)
             else:
-                active, lost = False, 0
+                o, p = False, 0
 
-        if not active:
-            cv2.putText(frm, "Object lost! Searching...", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0,0,255), 2)
-            if cnt % REDET_INT == 0:
-                det = mdl(frm, verbose=False, imgsz=416, conf=YOLO_CONF, classes=[cls_id])
+        if not o:
+            cv2.putText(c, "Object lost! Searching...", (100, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0,0,255), 2)
+            if q % H == 0:
+                det = a(c, verbose=False, imgsz=416, conf=J, classes=[u])
 
                 reacq = None
-                if REID:
+                if B:
                     best_score, best_box = -1, None
-                    for b in det[0].boxes:
-                        cbox = tuple(map(int, b.xyxy[0].cpu().numpy()))
+                    for b_ in det[0].boxes:
+                        cbox = tuple(map(int, b_.xyxy[0].cpu().numpy()))
                         cbox = (cbox[0], cbox[1], cbox[2]-cbox[0], cbox[3]-cbox[1])
-                        cfeat = get_hist(frm, cbox)
+                        cfeat = P(c, cbox)
                         if cfeat is None: continue
-                        sim = cv2.compareHist(feat0, cfeat, cv2.HISTCMP_CORREL)
+                        sim = cv2.compareHist(g, cfeat, cv2.HISTCMP_CORREL)
                         if sim > best_score: best_score, best_box = sim, cbox
-                    if best_box and best_score > REID_TH:
+                    if best_box and best_score > L:
                         reacq = best_box
                         print(f"Re-acquired original target with similarity: {best_score:.2f}")
                 else:
                     if len(det[0].boxes) > 0:
-                        b = det[0].boxes[0]
-                        reacq = tuple(map(int, b.xyxy[0].cpu().numpy()))
+                        b_ = det[0].boxes[0]
+                        reacq = tuple(map(int, b_.xyxy[0].cpu().numpy()))
                         reacq = (reacq[0], reacq[1], reacq[2]-reacq[0], reacq[3]-reacq[1])
                         print("Re-acquired first available target (Re-ID disabled).")
 
                 if reacq:
-                    trk, active = make_trk(TRK), True
-                    trk.init(frm, reacq)
-                    sz, sz_tgt = (reacq[2], reacq[3]), (reacq[2], reacq[3])
-                    box_draw = reacq
+                    i, o = N(F), True
+                    i.init(c, reacq)
+                    s, t = (reacq[2], reacq[3]), (reacq[2], reacq[3])
+                    w = reacq
 
-        if box_draw:
-            p1, p2 = (box_draw[0], box_draw[1]), (box_draw[0]+box_draw[2], box_draw[1]+box_draw[3])
-            cv2.rectangle(frm, p1, p2, (0,255,0), 2)
+        if w:
+            m, n = (w[0], w[1]), (w[0]+w[2], w[1]+w[3])
+            cv2.rectangle(c, m, n, (0,255,0), 2)
 
-        fps = cv2.getTickFrequency() / (cv2.getTickCount() - t0)
-        fps_sum += fps
+        fps = cv2.getTickFrequency() / (cv2.getTickCount() - v)
+        r += fps
 
-        cv2.putText(frm, f"FPS: {int(fps)} ({TRK})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
-        cv2.imshow("Hybrid Tracking Mode", frm)
+        cv2.putText(c, f"FPS: {int(fps)} ({F})", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,255), 2)
+        cv2.imshow("Hybrid Tracking Mode", c)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
-    if cnt > 0:
-        avg_fps = fps_sum / cnt
+    if q > 0:
+        avg_fps = r / q
         print(f"\nHybrid Tracking Mode finished. Average FPS: {avg_fps:.2f}")
 
 if __name__ == "__main__":
