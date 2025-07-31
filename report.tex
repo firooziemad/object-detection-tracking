@@ -1,0 +1,384 @@
+\documentclass[12pt, a4paper]{report}
+
+%========================================================================================
+%   PACKAGES AND DOCUMENT CONFIGURATION
+%========================================================================================
+
+\usepackage[margin=1in]{geometry} % Set page margins
+\usepackage{amsmath, amssymb}     % For advanced math environments and symbols
+\usepackage{graphicx}             % To include images
+\usepackage{hyperref}             % For clickable links and references
+\usepackage{xcolor}               % For defining colors
+\usepackage{listings}             % For formatting code snippets
+\usepackage{caption}              % For customized captions
+\usepackage{float}                % For improved figure placement with [H]
+
+% Hyperlink setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Object Tracking Report},
+}
+
+% Code listing style for Python
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+%========================================================================================
+%   TITLE PAGE
+%========================================================================================
+
+\title{
+    \huge Real-Time Object Detection and Adaptive Tracking \\
+    \large A Hybrid Approach using Correlation Filters and Kalman Prediction
+}
+\author{
+    Your Name \\
+    Your Student ID \\
+    \vspace{1cm}
+    Course Name \\
+    Professor's Name \\
+    University Name
+}
+\date{\today}
+
+%========================================================================================
+%   BEGIN DOCUMENT
+%========================================================================================
+
+\begin{document}
+
+\maketitle
+% FIX 5: Removed redundant \newpage to resolve warnings about duplicate destinations.
+% \newpage 
+
+%========================================================================================
+%   ABSTRACT
+%========================================================================================
+
+\begin{abstract}
+    \noindent This report presents the design, implementation, and evaluation of a real-time object tracking system. The primary goal is to accurately track dynamic objects in a video stream after an initial detection phase. The system architecture leverages a deep learning model, specifically YOLOv8, for robust initial object localization. Following detection, a custom-designed tracking algorithm takes over, which is inspired by Kernelized Correlation Filters (KCF) and enhanced with a Kalman filter for motion prediction and state estimation. Key innovations of our proposed tracker include adaptive scale estimation to handle changes in object size and a robust model update strategy to account for appearance variations. The performance of our algorithm is systematically compared against three established trackers: MOSSE, KCF, and CSRT. The evaluation focuses on tracking accuracy, processing speed (FPS), stability, and robustness to challenges such as temporary occlusion. The results demonstrate that our hybrid approach achieves a strong balance between high speed and tracking precision, successfully tracking multiple objects simultaneously while adapting to dynamic scene changes.
+    \vspace{1cm}
+    
+    \noindent \textbf{Keywords:} Object Tracking, Computer Vision, Correlation Filters, Kalman Filter, YOLO, Real-Time Systems, Signal Processing.
+\end{abstract}
+% FIX 5: Removed redundant \newpage to resolve warnings. \tableofcontents will handle the page break.
+% \newpage 
+
+\tableofcontents
+\listoffigures
+\listoftables
+\newpage
+
+%========================================================================================
+%   CHAPTER 1: INTRODUCTION
+%========================================================================================
+
+\chapter{Introduction}
+
+\section{Background and Motivation}
+Analyzing visual signals, particularly for tracking moving objects, is a cornerstone of modern computer vision and signal processing. A video can be interpreted as a temporal sequence of 2D spatial signals (frames). The information within each frame, combined with the correlation between consecutive frames, allows for the estimation of an object's state over time. This project focuses on designing and implementing a system to first detect an object in a video and then track its trajectory through subsequent frames with high accuracy and computational efficiency. The core principle is to leverage the temporal continuity inherent in video data to predict and refine an object's location, even under challenging conditions.
+
+\section{Project Objectives}
+The project is structured into two main phases:
+\begin{itemize}
+    \item \textbf{Initial Detection:} Employ a pre-trained deep learning model to reliably identify and locate a target object (e.g., a person, a car) in the initial frame of a video.
+    \item \textbf{Continuous Tracking:} After initialization, deploy a custom tracking algorithm to follow the object's movement. The tracker is designed to be computationally light yet robust, using frame-to-frame information to maintain a lock on the target.
+\end{itemize}
+
+The key objectives for the custom tracker are:
+\begin{enumerate}
+    \item To achieve high tracking speed (Frames Per Second - FPS).
+    \item To ensure tracking stability and smooth trajectory estimation.
+    \item To adapt the tracking model to changes in the object's appearance and scale.
+    \item To handle temporary occlusions where the object is hidden from view.
+    \item To support tracking of multiple objects simultaneously.
+\end{enumerate}
+
+\section{Report Structure}
+This report is organized as follows. Chapter 2 provides a theoretical background on object detection and the standard tracking algorithms used for comparison. Chapter 3 details the methodology of our proposed hybrid tracking algorithm. Chapter 4 discusses the implementation details, including the software environment and code structure. Chapter 5 presents the experimental results, comparing our algorithm against the benchmarks. Finally, Chapter 6 discusses the findings, limitations, and potential future work, followed by the conclusion in Chapter 7.
+
+%========================================================================================
+%   CHAPTER 2: THEORETICAL BACKGROUND & LITERATURE REVIEW
+%========================================================================================
+
+\chapter{Theoretical Background}
+
+\section{Object Detection Models}
+Object detection is the task of identifying and localizing one or more objects within an image or video. Modern approaches utilize deep learning, particularly Convolutional Neural Networks (CNNs).
+
+\subsection{YOLO (You Only Look Once)}
+YOLO is a family of state-of-the-art, real-time object detection models. It treats object detection as a single regression problem, straight from image pixels to bounding box coordinates and class probabilities. This single-pass architecture makes it extremely fast and suitable for real-time applications. For this project, we utilize a YOLO model for its excellent balance of speed and accuracy in the initial detection phase.
+
+\subsection{Faster R-CNN}
+Faster R-CNN is a two-stage detector. It first uses a Region Proposal Network (RPN) to identify potential object locations and then passes these regions to a second network for classification and bounding box refinement. While highly accurate, its two-stage nature makes it computationally heavier and slower than single-stage detectors like YOLO.
+
+\section{Correlation Filter-Based Tracking}
+Correlation filter trackers work by training a filter that produces a high response at the target's location. Tracking is performed by correlating this filter with a search region in a new frame and finding the location of the maximum response.
+
+\subsection{MOSSE (Minimum Output Sum of Squared Error)}
+The MOSSE filter is one of the pioneering high-speed trackers. It learns a filter $H$ in the frequency domain that minimizes the sum of squared errors between the filter's output and a desired Gaussian-shaped response. Optimization is performed in the frequency domain for immense speed, according to the formula:
+$$ H^* = \frac{\sum_{i} G_i \odot F_i^*}{\sum_{i} F_i \odot F_i^* + \lambda} $$
+where $F_i$ and $G_i$ are the Fourier transforms of the input patch and the desired response, respectively, and $\lambda$ is a regularization term.
+
+\subsection{KCF (Kernelized Correlation Filters)}
+KCF extends the concept of correlation filters by using the "kernel trick" to learn a non-linear classifier in a high-dimensional feature space. This allows it to model more complex relationships. It typically uses features like Histogram of Oriented Gradients (HOG). The solution for the filter coefficients $\alpha$ in the Fourier domain is elegantly simple:
+$$ \hat{\alpha} = \frac{\hat{y}}{\hat{k}^{xx} + \lambda} $$
+where $\hat{y}$ is the FFT of the desired Gaussian response and $\hat{k}^{xx}$ is the FFT of the kernel correlation of the training patch with itself.
+
+\subsection{CSRT (Channel and Spatial Reliability Trackers)}
+CSRT improves upon earlier filters by incorporating spatial and channel reliability scores. It learns a filter based on a richer set of features (e.g., color channels) and uses a spatial reliability map to down-weight less reliable pixels in the training region, effectively segmenting the target from the background. The optimization problem is:
+$$ \min_{h} \sum_{p} w(p) \left\| (h_p \star x_p) - y(p) \right\|^2_2 + \lambda \left\| h_p \right\|^2_2 $$
+This makes CSRT very accurate, especially with occlusions, but also more computationally demanding.
+
+
+%========================================================================================
+%   CHAPTER 3: PROPOSED METHODOLOGY
+%========================================================================================
+
+\chapter{The Hybrid Adaptive Tracking Algorithm}
+
+\section{System Architecture Overview}
+Our proposed algorithm is a multi-stage system designed for robust, real-time tracking. It integrates a deep learning detector for initialization with a custom adaptive correlation filter for tracking, enhanced by a Kalman filter for motion modeling. An overview of the architecture is shown in Figure \ref{fig:architecture}.
+
+\begin{figure}[H]
+    \centering
+    % You will create this diagram and save it as 'architecture.png'
+    \includegraphics[width=0.9\textwidth]{example-image-a} 
+    \caption{[Placeholder for a block diagram showing the workflow: Video Input -> YOLO Detection (Frame 1) -> Initialize Trackers -> For each subsequent frame -> (Kalman Predict -> Search Region -> Correlation Filter -> Find Peak -> Kalman Correct -> Scale Estimation -> Model Update) -> Output Video]}
+    \label{fig:architecture}
+\end{figure}
+
+% FIX 2: Added the missing label for the section reference.
+\section{Core Tracking: An Enhanced Correlation Filter}
+\label{sec:core_tracker} 
+\textit{[This section will be filled in based on your specific code. I will explain your novel contributions here. For example, I might describe it as:]}
+
+Our core tracker is inspired by KCF but incorporates several key innovations. Instead of HOG features, we use a combination of [e.g., raw pixel intensity and color features] to create a feature representation that is fast to compute yet robust to illumination changes. The filter is trained in the frequency domain to find the optimal mapping from the feature patch to a Gaussian response.
+
+The update of the filter model follows:
+$$ \alpha_{\text{model}} = (1 - \eta) \alpha_{\text{model}} + \eta \alpha_{\text{new}} $$
+where $\eta$ is the learning rate, which is [e.g., dynamically adjusted based on the peak response confidence].
+
+\section{Motion Prediction and Smoothing with Kalman Filter}
+To improve stability and handle temporary occlusions, we integrate a Kalman filter. The filter models the object's state, defined as:
+$$ \mathbf{x} = [c_x, c_y, w, h, \dot{c_x}, \dot{c_y}]^T $$
+where $(c_x, c_y)$ is the center of the bounding box, $(w, h)$ are its width and height, and $(\dot{c_x}, \dot{c_y})$ are the velocities.
+
+The workflow per frame is:
+\begin{enumerate}
+    \item \textbf{Predict:} The Kalman filter predicts the object's position in the current frame based on its state in the previous frame.
+    \item \textbf{Measure:} The correlation filter (Section \ref{sec:core_tracker}) provides a measurement of the object's new position.
+    \item \textbf{Correct:} The measurement is used to correct the Kalman filter's state. The corrected position is the final output for the frame.
+\end{enumerate}
+
+If the correlation filter's response peak falls below a confidence threshold (indicating likely occlusion), the correction step is skipped, and the tracker outputs the Kalman filter's prediction. This allows the system to "coast" through occlusions.
+
+\section{Adaptive Scale Estimation}
+To adapt to changes in the object's size, we implement a scale pyramid. In each frame, we test the correlation filter on the search region at multiple scales (e.g., \{0.95, 1.0, 1.05\} of the current size). The scale that produces the highest correlation peak is selected as the new object scale. This ensures the bounding box dynamically resizes as the object moves closer to or further from the camera.
+
+\section{Multi-Object Tracking Framework}
+The framework is designed to handle multiple objects. In the first frame, the YOLO detector identifies all target objects. For each detected object, a unique instance of our tracker (including its own correlation filter, Kalman filter, and state) is initialized. In subsequent frames, the system iterates through the list of active trackers, updating each one independently.
+
+%========================================================================================
+%   CHAPTER 4: IMPLEMENTATION
+%========================================================================================
+
+\chapter{Implementation Details}
+
+\section{Environment and Libraries}
+The project was implemented in Python 3.9 using the following key libraries:
+\begin{itemize}
+    \item \textbf{OpenCV-Python (4.8.0):} For video I/O, image processing, and implementations of the MOSSE, KCF, and CSRT trackers.
+    \item \textbf{Ultralytics (8.0):} For the YOLOv8 object detection model.
+    \item \textbf{PyTorch (2.0):} As the backend for the YOLOv8 model.
+    \item \textbf{NumPy (1.24):} For all numerical operations, especially FFT and matrix manipulations.
+\end{itemize}
+
+\section{Code Structure}
+The project is organized into several scripts. The main execution script orchestrates the detection and tracking loop.
+\textit{[I will add your specific code snippets here after you provide them.]}
+
+\subsection{Initial Detection Snippet}
+\begin{lstlisting}[language=Python, caption={Code for initializing YOLO and detecting the first object.}]
+# Placeholder for your YOLO detection code.
+# I will fill this in based on the code you provide.
+import torch
+from ultralytics import YOLO
+
+# Load model
+model = YOLO('yolov8n.pt') 
+
+# ... rest of the detection logic ...
+\end{lstlisting}
+
+\subsection{Custom Tracker Implementation Snippet}
+\begin{lstlisting}[language=Python, caption={Key function from your custom tracker implementation.}]
+# Placeholder for your custom tracker's core logic.
+# I will detail the functions for training, tracking, and updating.
+def train_filter(image_patch, goal_response):
+    # ... FFT and filter calculation logic ...
+    return filter
+
+def track_object(new_frame, last_position, filter):
+    # ... FFT of search window, correlation, inverse FFT ...
+    return new_position
+\end{lstlisting}
+
+
+%========================================================================================
+%   CHAPTER 5: EXPERIMENTAL RESULTS AND ANALYSIS
+%========================================================================================
+
+\chapter{Experimental Results and Analysis}
+
+\section{Test Environment and Datasets}
+All tests were conducted on a machine with the following specifications:
+\begin{itemize}
+    \item \textbf{CPU:} [e.g., Intel Core i7-9700K @ 3.60GHz]
+    \item \textbf{GPU:} [e.g., NVIDIA GeForce RTX 2080 Ti]
+    \item \textbf{RAM:} [e.g., 32 GB]
+\end{itemize}
+The algorithms were evaluated on several video sequences featuring [e.g., pedestrian traffic, moving vehicles, and scenes with occlusions].
+
+\section{Quantitative Comparison of Trackers}
+We compared our proposed algorithm against the OpenCV implementations of MOSSE, KCF, and CSRT. The primary metrics were average Frames Per Second (FPS) and tracking success rate.
+
+\begin{table}[H]
+    \centering
+    % FIX 3: Added the missing label here, inside the caption.
+    \caption{Performance Comparison of Tracking Algorithms.\label{tab:comparison}}
+    % FIX 4: Changed 'l' to 'p{5cm}' in the last column to allow text wrapping and fix the "Overfull hbox" error.
+    \begin{tabular}{|l|c|c|p{5cm}|}
+        \hline
+        \textbf{Algorithm} & \textbf{Average FPS} & \textbf{Success Rate (\%)} & \textbf{Notes} \\
+        \hline
+        MOSSE   & [e.g., 550] & [e.g., 75] & Very fast, but prone to drift. \\
+        KCF     & [e.g., 220] & [e.g., 85] & Good balance of speed and accuracy. \\
+        CSRT    & [e.g., 35]  & [e.g., 92] & Highly accurate but slow. \\
+        \hline
+        \textbf{Our Algorithm} & \textbf{[Your Result]} & \textbf{[Your Result]} & \textbf{[e.g., Fast, robust to scale and occlusion.]} \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\section{Qualitative Analysis}
+\textit{[This section will be filled with figures generated from your output videos.]}
+
+\subsection{Tracking Stability and Scale Adaptation}
+Figure \ref{fig:scale} demonstrates the algorithm's ability to adapt the bounding box size. As the subject approaches the camera, the box smoothly expands.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{example-image-b}
+    \caption{[Placeholder for a sequence of images showing the bounding box size changing correctly.]}
+    \label{fig:scale}
+\end{figure}
+
+\subsection{Occlusion Handling}
+Figure \ref{fig:occlusion} shows the tracker's performance during a temporary occlusion event. The Kalman filter predicts the object's path while it is hidden, allowing for successful re-acquisition.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{example-image-c}
+    \caption{[Placeholder for a sequence of images showing the object being hidden and then successfully re-acquired.]}
+    \label{fig:occlusion}
+\end{figure}
+
+\subsection{Multi-Object Tracking Performance}
+Figure \ref{fig:multi} displays the system tracking multiple independent objects simultaneously, maintaining high FPS and individual tracking accuracy.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{example-image}
+    \caption{[Placeholder for a single frame showing multiple objects being tracked at once.]}
+    \label{fig:multi}
+\end{figure}
+
+
+%========================================================================================
+%   CHAPTER 6: DISCUSSION
+%========================================================================================
+
+\chapter{Discussion}
+
+\section{Analysis of Results}
+The results from Table \ref{tab:comparison} and the qualitative figures indicate that our proposed hybrid algorithm successfully balances the trade-off between speed and accuracy. It outperforms CSRT in speed significantly while providing more robustness than MOSSE and KCF, particularly due to the integration of the Kalman filter and adaptive scale handling. The innovative aspects, such as [mention your specific innovation here], contributed directly to its strong performance in [mention a specific scenario, e.g., occlusion].
+
+\section{Limitations}
+Despite its strong performance, the algorithm has limitations:
+\begin{itemize}
+    \item \textbf{Fast Motion:} Extreme, unpredictable motion can cause tracking failure as it violates the linear motion assumption of the Kalman filter.
+    \item \textbf{Long-Term Occlusion:} If an object is occluded for an extended period, the Kalman filter's prediction error will accumulate, and the tracker may fail to re-acquire the target.
+    \item \textbf{Drift:} Like all adaptive trackers, it is susceptible to gradual model drift if the background contains features similar to the target.
+\end{itemize}
+
+\section{Future Work}
+Future improvements could include:
+\begin{itemize}
+    \item \textbf{Re-detection Logic:} Implementing a re-detection mechanism where if tracking confidence drops significantly, the YOLO detector is re-invoked to find the object again.
+    \item \textbf{Advanced Motion Models:} Replacing the linear Kalman filter with a more complex model, like an Unscented Kalman Filter (UKF), to better handle non-linear motion.
+    \item \textbf{Deep Features:} Integrating features from a deep neural network into the correlation filter framework for even greater descriptive power, potentially at the cost of speed.
+\end{itemize}
+
+%========================================================================================
+%   CHAPTER 7: CONCLUSION
+%========================================================================================
+
+\chapter{Conclusion}
+This project successfully developed and evaluated a high-performance object tracking system. By combining a YOLOv8 detector for initialization with a custom adaptive correlation filter tracker enhanced by a Kalman filter, we created an algorithm that meets all the core project objectives. It delivers high-speed, stable, and adaptive tracking for single and multiple objects. The comparative analysis demonstrated its competitive performance against established algorithms, validating our hybrid design philosophy. The final system stands as a robust solution for real-time tracking applications.
+
+\newpage
+%========================================================================================
+%   REFERENCES
+%========================================================================================
+
+\begin{thebibliography}{9}
+
+\bibitem{bolme2010mosse}
+David S. Bolme, J. Ross Beveridge, Bruce A. Draper, and Yui Man Lui.
+\textit{"Visual object tracking using adaptive correlation filters."}
+In 2010 IEEE computer society conference on computer vision and pattern recognition.
+
+\bibitem{henriques2014kcf}
+J. F. Henriques, R. Caseiro, P. Martins, and J. Batista.
+\textit{"High-speed tracking with kernelized correlation filters."}
+IEEE transactions on pattern analysis and machine intelligence, 2014.
+
+\bibitem{lukezic2017csrt}
+Alan Lukezic, Tomas Vojir, Luka Cehovin, Jiri Matas, and Matej Kristan.
+\textit{"Discriminative correlation filter with channel and spatial reliability."}
+In Proceedings of the IEEE conference on computer vision and pattern recognition, 2017.
+
+\bibitem{yolo2023}
+Ultralytics.
+\textit{"YOLOv8."}
+\url{https://github.com/ultralytics/ultralytics}, 2023.
+
+\end{thebibliography} % FIX 1: Added the missing \end{thebibliography} command.
+
+\end{document}

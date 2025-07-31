@@ -5,10 +5,10 @@ from ultralytics import YOLO
 HYBRID = False
 REID = False
 
-VID = "carr3.mp4"
-CLS = "car"
+VID = "person1.mp4"
+CLS = "person"
 MODEL = "yolov8n.pt"
-TRK = "KCF"
+TRK = "CSRT"
 
 HEALTH_INT = 45
 REDET_INT = 15

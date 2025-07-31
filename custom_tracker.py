@@ -16,11 +16,11 @@ class Tracker:
         )
         self.box = None
         self.prev = None
-        self.trks = []
-        self.trk_len = 10
-        self.intv = 5
-        self.idx = 0
-        self.lost = 0
+        self.tracks = []
+        self.track_len = 10
+        self.interval = 5
+        self.frame_idx = 0
+        self.lost_count = 0
         self.max_lost = 15
         self.kf = cv2.KalmanFilter(8, 4)
         self.kf.measurementMatrix = np.array([
@@ -97,9 +97,9 @@ class Tracker:
 
     def init(self, img, box):
         self.box = box
-        self.lost = 0
-        self.idx = 0
-        self.trks = []
+        self.lost_count = 0
+        self.frame_idx = 0
+        self.tracks = []
         self.box_hist = [box]
         self.box_buf = [box]
         self.pos_hist = [box[:2]]
@@ -110,36 +110,36 @@ class Tracker:
             gray = img
         self.prev = gray.copy()
         x, y, w, h = box
-        regs = [
+        regions = [
             (x + w//6, y + h//6, 2*w//3, 2*h//3),
             (x + w//8, y + h//8, 3*w//4, 3*h//4),
             (x + w//12, y + h//12, 5*w//6, 5*h//6),
             (x, y, w, h)
         ]
-        tot = 0
-        for i, reg in enumerate(regs):
+        total = 0
+        for i, reg in enumerate(regions):
             rx, ry, rw, rh = reg
-            msk = np.zeros_like(gray)
-            msk[ry:ry+rh, rx:rx+rw] = 255
-            rp = self.fp.copy()
-            rp['maxCorners'] = [40, 30, 25, 20][i]
-            rp['qualityLevel'] = [0.03, 0.025, 0.02, 0.015][i]
-            crn = cv2.goodFeaturesToTrack(gray, mask=msk, **rp)
-            if crn is not None:
-                for c in crn:
-                    self.trks.append([c])
-                tot += len(crn)
+            mask = np.zeros_like(gray)
+            mask[ry:ry+rh, rx:rx+rw] = 255
+            fp_params = self.fp.copy()
+            fp_params['maxCorners'] = [40, 30, 25, 20][i]
+            fp_params['qualityLevel'] = [0.03, 0.025, 0.02, 0.015][i]
+            corners = cv2.goodFeaturesToTrack(gray, mask=mask, **fp_params)
+            if corners is not None:
+                for c in corners:
+                    self.tracks.append([c])
+                total += len(corners)
         x, y, w, h = box
         self.kf.statePost = np.array([x, y, w, h, 0, 0, 0, 0], dtype=np.float32)
         self.prev_size = (w, h)
-        print(f"Init: {tot} features in {len(regs)} regions")
-        return tot > 0
+        print(f"Init: {total} features in {len(regions)} regions")
+        return total > 0
 
     def set_mode(self, mode):
         if mode in self.modes:
             self.mode = mode
             cfg = self.modes[mode]
-            self.intv = cfg["detect_interval"]
+            self.interval = cfg["detect_interval"]
             self.max_lost = cfg["max_lost_frames"]
             self.size_smooth = cfg["size_smoothing"]
             self.fp.update({
@@ -160,8 +160,8 @@ class Tracker:
     def outliers(self, pts):
         if len(pts) < 8:
             return pts
-        ctr = np.median(pts, axis=0)
-        dists = np.sqrt(np.sum((pts - ctr)**2, axis=1))
+        center = np.median(pts, axis=0)
+        dists = np.sqrt(np.sum((pts - center)**2, axis=1))
         q1 = np.percentile(dists, 25)
         q3 = np.percentile(dists, 75)
         iqr = q3 - q1
@@ -184,17 +184,17 @@ class Tracker:
     def smooth(self, new_box, conf=1.0):
         if self.box is None:
             return new_box
-        cx, cy, cw, ch = self.box
+        x, y, w, h = self.box
         nx, ny, nw, nh = new_box
         cfg = self.modes[self.mode]
         pos_smooth = cfg.get("position_smoothing", 0.5)
-        mag = np.sqrt((nx - cx)**2 + (ny - cy)**2)
+        mag = np.sqrt((nx - x)**2 + (ny - y)**2)
         af = min(1.0, mag / 50.0)
         sf = pos_smooth * conf * (1.0 - af * 0.3)
-        sx = cx + (nx - cx) * sf
-        sy = cy + (ny - cy) * sf
-        sw = cw + (nw - cw) * sf * 0.7
-        sh = ch + (nh - ch) * sf * 0.7
+        sx = x + (nx - x) * sf
+        sy = y + (ny - y) * sf
+        sw = w + (nw - w) * sf * 0.7
+        sh = h + (nh - h) * sf * 0.7
         return (int(sx), int(sy), int(sw), int(sh))
 
     def update(self, img):
@@ -204,28 +204,28 @@ class Tracker:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         else:
             gray = img
-        self.idx += 1
-        if len(self.trks) > 0:
-            p0 = np.float32([tr[-1] for tr in self.trks]).reshape(-1, 1, 2)
+        self.frame_idx += 1
+        if len(self.tracks) > 0:
+            p0 = np.float32([tr[-1] for tr in self.tracks]).reshape(-1, 1, 2)
             p1, st, err = cv2.calcOpticalFlowPyrLK(
                 self.prev, gray, p0, None, **self.lk
             )
             good_idx = []
             good_new = []
             good_old = []
-            for i, (tr, np1, s, e) in enumerate(zip(self.trks, p1, st, err)):
+            for i, (tr, np1, s, e) in enumerate(zip(self.tracks, p1, st, err)):
                 if s == 1 and e < 50:
                     good_idx.append(i)
                     good_new.append(np1)
                     good_old.append(p0[i])
-            new_trks = []
+            new_tracks = []
             for i, np1 in zip(good_idx, good_new):
-                tr = self.trks[i]
+                tr = self.tracks[i]
                 tr.append([np1[0]])
-                if len(tr) > self.trk_len:
+                if len(tr) > self.track_len:
                     del tr[0]
-                new_trks.append(tr)
-            self.trks = new_trks
+                new_tracks.append(tr)
+            self.tracks = new_tracks
             if len(good_new) >= 8:
                 pts = np.array(good_new).reshape(-1, 2)
                 fpts = self.outliers(pts)
@@ -292,23 +292,23 @@ class Tracker:
                         self.pos_hist.append(self.box[:2])
                         if len(self.pos_hist) > self.pos_hist_size:
                             self.pos_hist.pop(0)
-                        self.lost = 0
-                        if self.idx % 30 == 0:
+                        self.lost_count = 0
+                        if self.frame_idx % 30 == 0:
                             print(f"Track: {len(fpts)} features, box: {kw}x{kh}")
                     else:
-                        self.lost += 1
+                        self.lost_count += 1
                 else:
-                    self.lost += 1
+                    self.lost_count += 1
             else:
-                self.lost += 1
+                self.lost_count += 1
                 if len(good_new) > 0:
                     print(f"Few features: {len(good_new)}")
-        if (self.idx % self.intv == 0 or len(self.trks) < 25) and self.box is not None:
+        if (self.frame_idx % self.interval == 0 or len(self.tracks) < 25) and self.box is not None:
             x, y, w, h = self.box
-            msk = np.zeros_like(gray)
+            mask = np.zeros_like(gray)
             im = min(w//8, h//8, 15)
-            msk[y+im:y+h-im, x+im:x+w-im] = 255
-            for tr in self.trks:
+            mask[y+im:y+h-im, x+im:x+w-im] = 255
+            for tr in self.tracks:
                 cv2.circle(msk, tuple(map(int, tr[-1][0])), 12, 0, -1)
             nfp = self.fp.copy()
             nfp['maxCorners'] = 30

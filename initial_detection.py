@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-VID = "car1.mp4"
-CLS = "train"
+VID = "person1.mp4"
+CLS = "person"
 MOD = "yolov8n.pt"
 
 def win(size):
