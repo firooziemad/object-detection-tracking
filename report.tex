@@ -1,5 +1,6 @@
 \documentclass[12pt, a4paper]{article}
 
+
 %----------------------------------------------------------------------------------------
 %   PACKAGES AND DOCUMENT CONFIGURATION
 %----------------------------------------------------------------------------------------
@@ -7,54 +8,55 @@
 % Core packages
 \usepackage[english]{babel}
 \usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
+\usepackage[T1]{fontenc} % For modern font encoding
+
+% Page layout and spacing
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{setspace} % For line spacing
+\onehalfspacing % Use 1.5 line spacing for readability
+
+% Fonts - A modern, clean look
+\usepackage{FiraSans} % Corrected package name
+\usepackage{newtxmath} % Math fonts that pair well with Fira Sans
 
 % Math packages
 \usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{amsfonts}
+% We have REMOVED amssymb and amsfonts as they conflict with newtxmath
 
-% Page layout
-\usepackage[a4paper, margin=1in]{geometry}
-
-% Graphics and colors
+% Graphics, colors, and tables
 \usepackage{graphicx}
 \usepackage{xcolor}
-
-% For professional tables
 \usepackage{booktabs}
-\usepackage{tabularx}
-
-% For better figure and table placement
+\usepackage{tabularx} % For wrapping text in tables
 \usepackage{float}
 
-% For hyperlinked URLs and table of contents
+% Define a professional color palette
+\definecolor{ThemeColor}{RGB}{0, 114, 178}
+\definecolor{CodeBackground}{RGB}{245, 245, 245}
+\definecolor{CodeComment}{RGB}{0, 130, 0}
+\definecolor{CodeKeyword}{RGB}{0, 114, 178}
+\definecolor{CodeString}{RGB}{214, 39, 40}
+
+% Hyperlinks
 \usepackage{hyperref}
 \hypersetup{
     colorlinks=true,
-    linkcolor=blue,
+    linkcolor=ThemeColor,
     filecolor=magenta,      
-    urlcolor=cyan,
+    urlcolor=ThemeColor,
+    pdftitle={Object Tracking Report},
+    pdfpagemode=FullScreen,
 }
 
-% For source code listings
+% Source code listings
 \usepackage{listings}
-
-% Define colors for code syntax highlighting
-\definecolor{backcolour}{rgb}{0.95,0.95,0.95}
-\definecolor{codegreen}{rgb}{0,0.6,0}
-\definecolor{codegray}{rgb}{0.5,0.5,0.5}
-\definecolor{codepurple}{rgb}{0.58,0,0.82}
-\definecolor{keywordcolor}{rgb}{0.13, 0.46, 0.73} % A nice blue for keywords
-
-% Setup the style for code listings
 \lstdefinestyle{mystyle}{
     language=Python,
-    backgroundcolor=\color{backcolour},   
-    commentstyle=\color{codegreen},
-    keywordstyle=\color{keywordcolor},
-    numberstyle=\tiny\color{codegray},
-    stringstyle=\color{codepurple},
+    backgroundcolor=\color{CodeBackground},   
+    commentstyle=\color{CodeComment},
+    keywordstyle=\color{CodeKeyword},
+    numberstyle=\tiny\color{darkgray},
+    stringstyle=\color{CodeString},
     basicstyle=\ttfamily\footnotesize,
     breakatwhitespace=false,         
     breaklines=true,                 
@@ -67,10 +69,28 @@
     showtabs=false,                  
     tabsize=2,
     frame=single,
-    framerule=0.5pt,
-    rulesepcolor=\color{gray}
+    framerule=0pt, % No visible frame rule
+    rulecolor=\color{black},
+    aboveskip=1em, % Space above listing
+    belowskip=1em, % Space below listing
 }
 \lstset{style=mystyle}
+
+% Section title styling
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries\scshape\color{ThemeColor}}{\thesection.}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color{black}}{\thesubsection.}{1em}{}
+\titlespacing*{\section}{0pt}{2.5ex plus 1ex minus .2ex}{1.5ex plus .2ex}
+
+% Header and Footer styling
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % Clear all header and footer fields
+\fancyhead[L]{Signals and Systems -- Group 4}
+\fancyhead[R]{Object Tracking Project}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
 
 
 %----------------------------------------------------------------------------------------
@@ -79,30 +99,20 @@
 
 \title{
     \vspace{2cm}
-    \textbf{Design and Implementation of a Real-Time \\ Object Tracking System using a Custom KLT-KF Algorithm}
-    \vspace{1.5cm}
-    \large{Signals and Systems Course Project \\ Group 4}
+    \textbf{Design and Implementation of a Real-Time \\ Object Tracking System using Correlation Filters and Kalman Prediction}
     \vspace{2cm}
 }
 
 \author{
     Emad Firoozi \\
-    \href{mailto:emad.firoozi84@gmail.com}{\texttt{emad.firoozi84@gmail.com}}
-    \and
-    Mohammad Rajaeei Rizi
-    \and
-    Hossein Momeni
+    Mohammad Rajaei Rizi\\
+    Hossein Momeni \\
+    EE Dept. Sharif University of Technology \\
+    \texttt{https://github.com/firooziemad/object-detection-tracking}
     \vspace{1cm}
-    \\
-    \large{Department of Electrical Engineering} \\
-    \large{Sharif University of Technology} \\
-    \vspace{0.5cm}
-    \large{GitHub Repository:} \\
-    \href{https://github.com/firooziemad/object-detection-tracking}{\lstinline!firooziemad/object-detection-tracking!}
 }
 
 \date{Summer 2025}
-
 
 %----------------------------------------------------------------------------------------
 %   DOCUMENT START
